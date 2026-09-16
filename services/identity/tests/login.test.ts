@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import {
   InvalidCredentialsError,
   LoginUser,
+  PendingApprovalAccountError,
   SuspendedAccountError,
 } from "../src/application/auth/login-user.js";
 import { loginUserSchema } from "../src/interfaces/http/auth.schemas.js";
@@ -37,8 +38,13 @@ function createRepository(credentials: UserCredentials | null) {
         ...credentials,
         createdAt: new Date(),
         updatedAt: new Date(),
+        statusChangedAt: null,
+        statusChangedBy: null,
       };
       return user;
+    },
+    async findById() {
+      return null;
     },
     async findCredentialsByEmail(email) {
       lookupEmails.push(email);
@@ -47,8 +53,23 @@ function createRepository(credentials: UserCredentials | null) {
       }
       return credentials;
     },
+    async findCredentialsById() {
+      return null;
+    },
     async create() {
       throw new Error("create is not used in login tests");
+    },
+    async updateProfile() {
+      throw new Error("updateProfile is not used in login tests");
+    },
+    async updatePassword() {
+      throw new Error("updatePassword is not used in login tests");
+    },
+    async updateStatus() {
+      throw new Error("updateStatus is not used in login tests");
+    },
+    async listUsers() {
+      throw new Error("listUsers is not used in login tests");
     },
   };
 
@@ -126,6 +147,18 @@ test("NULL passwordHash is treated as invalid credentials", async () => {
   await assert.rejects(
     login.execute({ email: "user@example.com", password: "correct-password" }),
     InvalidCredentialsError,
+  );
+  assert.deepEqual(issued, []);
+});
+
+test("pending-approval user with valid password throws PendingApprovalAccountError and issues no token", async () => {
+  const { repo } = createRepository(createCredentials({ status: "PENDING_APPROVAL", role: "RESTAURANT" }));
+  const { issued, issuer } = createIssuer();
+  const login = new LoginUser(repo, issuer);
+
+  await assert.rejects(
+    login.execute({ email: "user@example.com", password: "correct-password" }),
+    PendingApprovalAccountError,
   );
   assert.deepEqual(issued, []);
 });
