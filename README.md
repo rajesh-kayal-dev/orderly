@@ -67,7 +67,7 @@ For scoped packages, update:
 
 ```text
 @orderly/utils
-@orderly/api
+@orderly/gateway
 ```
 
 to your project name if needed.
@@ -137,7 +137,7 @@ pnpm --filter web dev
 Run only the API:
 
 ```bash
-pnpm --filter @orderly/api dev
+pnpm --filter @orderly/gateway dev
 ```
 
 Add a package to the web app:
@@ -149,7 +149,7 @@ pnpm --filter web add <package>
 Add a package to the API:
 
 ```bash
-pnpm --filter @orderly/api add <package>
+pnpm --filter @orderly/gateway add <package>
 ```
 
 Add a development package:
