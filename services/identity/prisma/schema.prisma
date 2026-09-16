@@ -17,20 +17,24 @@ enum Role {
 
 enum AccountStatus {
   ACTIVE
+  PENDING_APPROVAL
   SUSPENDED
 }
 
 model User {
-  id           String        @id @default(uuid())
-  email        String        @unique
-  passwordHash String?
-  fullName     String
-  phoneNumber  String?
-  role         Role          @default(CUSTOMER)
-  status       AccountStatus @default(ACTIVE)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id               String        @id @default(uuid())
+  email            String        @unique
+  passwordHash     String?
+  fullName         String
+  phoneNumber      String?
+  role             Role          @default(CUSTOMER)
+  status           AccountStatus @default(ACTIVE)
+  statusChangedBy  String?
+  statusChangedAt  DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   @@index([role])
   @@index([status])
+  @@index([status, role])
 }

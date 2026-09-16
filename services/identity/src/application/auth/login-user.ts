@@ -28,6 +28,13 @@ export class SuspendedAccountError extends Error {
   }
 }
 
+export class PendingApprovalAccountError extends Error {
+  constructor() {
+    super("Account is pending admin approval");
+    this.name = "PendingApprovalAccountError";
+  }
+}
+
 export class LoginUser {
   constructor(
     private readonly users: UserRepository,
@@ -57,6 +64,10 @@ export class LoginUser {
 
     if (credentials.status === "SUSPENDED") {
       throw new SuspendedAccountError();
+    }
+
+    if (credentials.status === "PENDING_APPROVAL") {
+      throw new PendingApprovalAccountError();
     }
 
     const accessToken = this.issueAccessToken(credentials.id, credentials.role);
