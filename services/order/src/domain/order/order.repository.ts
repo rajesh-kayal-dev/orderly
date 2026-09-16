@@ -35,6 +35,7 @@ export interface OrderRepository {
   createOrder(data: CreateOrderData): Promise<Order>;
   findOrderById(id: string): Promise<Order | null>;
   listOrdersByCustomer(customerId: string, params: ListOrdersParams): Promise<ListOrdersResult>;
+  listOrdersByRestaurant(restaurantId: string, params: ListOrdersParams): Promise<ListOrdersResult>;
   updateOrderStatus(id: string, status: OrderStatus): Promise<Order | null>;
   updateOrderPaymentStatus(id: string, paymentStatus: PaymentStatus): Promise<Order | null>;
 }

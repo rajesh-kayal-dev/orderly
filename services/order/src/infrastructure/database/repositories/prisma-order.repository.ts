@@ -169,6 +169,29 @@ export class PrismaOrderRepository implements OrderRepository {
     return { orders: orders.map(toOrder), total };
   }
 
+  async listOrdersByRestaurant(restaurantId: string, params: ListOrdersParams): Promise<ListOrdersResult> {
+    const [orders, total] = await Promise.all([
+      this.db.order.findMany({
+        where: { restaurantId },
+        select: {
+          ...safeOrderSelect,
+          items: {
+            select: safeOrderItemSelect,
+            orderBy: { createdAt: "asc" },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        skip: params.offset,
+        take: params.limit,
+      }),
+      this.db.order.count({
+        where: { restaurantId },
+      }),
+    ]);
+
+    return { orders: orders.map(toOrder), total };
+  }
+
   async updateOrderStatus(id: string, status: OrderStatus): Promise<Order | null> {
     const existing = await this.db.order.findUnique({
       where: { id },

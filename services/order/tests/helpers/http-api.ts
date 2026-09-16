@@ -5,6 +5,7 @@ import express, { type Express } from "express";
 import jwt from "jsonwebtoken";
 import { createCartRouter } from "../../src/interfaces/http/cart.routes.js";
 import { createOrderRouter } from "../../src/interfaces/http/order.routes.js";
+import { createRestaurantOrderRouter } from "../../src/interfaces/http/restaurant-order.routes.js";
 import { createTokenVerifier } from "../../src/infrastructure/security/token.js";
 import { createFakeRepositories, type FakeRepositoryHandle } from "./fake-repositories.js";
 
@@ -50,6 +51,14 @@ export async function createHttpTestApi(): Promise<HttpTestApi> {
       cartRepository: handle.cartRepo,
       orderRepository: handle.orderRepo,
       menuCatalogClient: handle.catalogClient,
+      tokenVerifier,
+    }),
+  );
+  app.use(
+    "/restaurant/orders",
+    createRestaurantOrderRouter({
+      orderRepository: handle.orderRepo,
+      restaurantOwnershipClient: handle.restaurantOwnershipClient,
       tokenVerifier,
     }),
   );

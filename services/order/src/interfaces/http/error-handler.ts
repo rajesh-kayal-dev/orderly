@@ -12,6 +12,8 @@ const ERROR_STATUS_BY_NAME: Record<string, number> = {
   OrderNotFoundError: 404,
   OrderForbiddenError: 403,
   OrderStateConflictError: 409,
+  OrderStatusTransitionError: 409,
+  RestaurantOwnershipError: 403,
 };
 
 export function mapErrorToResponse(res: Response, error: unknown): void {
