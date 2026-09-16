@@ -1,0 +1,14 @@
+{
+  "name": "@orderly/utils",
+  "version": "1.0.0",
+  "main": "./dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsc --watch",
+    "build": "tsc"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
