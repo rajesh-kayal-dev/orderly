@@ -1,0 +1,95 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrderStatus {
+  placed
+  accepted
+  preparing
+  ready
+  assigned
+  picked_up
+  delivered
+  cancelled
+  refunded
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  cancelled
+  refunded
+}
+
+enum PaymentMethod {
+  cod
+}
+
+model Cart {
+  id           String    @id @default(uuid())
+  customerId   String    @unique
+  restaurantId String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  items CartItem[]
+
+  @@index([customerId])
+}
+
+model CartItem {
+  id         String   @id @default(uuid())
+  cartId     String
+  menuItemId String
+  quantity   Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  cart Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  @@index([cartId])
+  @@unique([cartId, menuItemId])
+}
+
+model Order {
+  id                String        @id @default(uuid())
+  customerId        String
+  restaurantId      String
+  deliveryAddressId String?
+  deliveryAddress   Json?
+  notes             String?
+  status            OrderStatus   @default(placed)
+  paymentStatus     PaymentStatus @default(pending)
+  paymentMethod     PaymentMethod @default(cod)
+  subtotal          Decimal       @db.Decimal(10, 2)
+  deliveryFee       Decimal       @db.Decimal(10, 2)
+  totalAmount       Decimal       @db.Decimal(10, 2)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  items OrderItem[]
+
+  @@index([customerId])
+  @@index([restaurantId])
+  @@index([status])
+}
+
+model OrderItem {
+  id           String  @id @default(uuid())
+  orderId      String
+  menuItemId   String
+  menuItemName String
+  quantity     Int
+  unitPrice    Decimal @db.Decimal(10, 2)
+  subtotal     Decimal @db.Decimal(10, 2)
+  createdAt    DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
