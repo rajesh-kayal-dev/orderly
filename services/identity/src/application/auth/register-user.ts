@@ -14,14 +14,13 @@ export class EmailAlreadyExistsError extends Error {
   }
 }
 
-export class RegisterUser {
-  constructor(private readonly users: UserRepository) {}
-
-  async execute(input: RegisterUserInput) {
+export const registerUser =
+  (users: UserRepository) =>
+  async (input: RegisterUserInput) => {
     const email = input.email.trim().toLowerCase();
     const fullName = input.fullName.trim();
 
-    const existingUser = await this.users.findByEmail(email);
+    const existingUser = await users.findByEmail(email);
 
     if (existingUser) {
       throw new EmailAlreadyExistsError();
@@ -29,7 +28,7 @@ export class RegisterUser {
 
     const passwordHash = await bcrypt.hash(input.password, 12);
 
-    const user = await this.users.create({
+    const user = await users.create({
       email,
       passwordHash,
       fullName,
@@ -44,5 +43,4 @@ export class RegisterUser {
       status: user.status,
       createdAt: user.createdAt,
     };
-  }
-}
+  };
