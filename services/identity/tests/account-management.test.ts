@@ -129,12 +129,13 @@ test("reject validates the target is a pending approval then reports the missing
   await assert.rejects(rejectUser(repo)("missing", "admin-1"), UserNotFoundError);
 });
 
-test("listPendingApprovals returns only pending users", async () => {
+test("listPendingApprovals returns only pending approval-required roles", async () => {
   const { repo } = createFakeUserRepository([
     makeUser("u1", { role: "RESTAURANT", status: "PENDING_APPROVAL" }),
     makeUser("u2", { role: "DELIVERY_PARTNER", status: "PENDING_APPROVAL" }),
     makeUser("u3", { role: "RESTAURANT", status: "ACTIVE" }),
     makeUser("u4", { role: "CUSTOMER", status: "SUSPENDED" }),
+    makeUser("u5", { role: "CUSTOMER", status: "PENDING_APPROVAL" }),
   ]);
 
   const pending = await listPendingApprovals(repo)();
