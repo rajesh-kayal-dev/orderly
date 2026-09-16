@@ -28,17 +28,7 @@ export const updateMenuItem =
       throw new MenuItemNotFoundError();
     }
 
-    if (input.categoryId !== undefined) {
-      if (input.categoryId === null) {
-        const updated = await menu.updateMenuItem(menuItemId, { categoryId: null });
-
-        if (!updated) {
-          throw new MenuItemNotFoundError();
-        }
-
-        return updated;
-      }
-
+    if (input.categoryId !== undefined && input.categoryId !== null) {
       const category = await menu.findCategoryById(input.categoryId);
 
       if (!category || category.restaurantId !== restaurant.id) {

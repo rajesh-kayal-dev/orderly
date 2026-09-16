@@ -3,19 +3,19 @@ import { z } from "zod";
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export const createRestaurantSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().trim().min(1).max(255),
   description: z.string().optional(),
-  address: z.string().optional(),
-  imageUrl: z.string().optional(),
+  address: z.string().max(500).optional(),
+  imageUrl: z.string().max(500).optional(),
   opensAt: z.string().regex(timePattern, "Time must be HH:mm").optional(),
   closesAt: z.string().regex(timePattern, "Time must be HH:mm").optional(),
 });
 
 export const updateRestaurantSchema = z.object({
-  name: z.string().min(1).optional(),
+  name: z.string().trim().min(1).max(255).optional(),
   description: z.string().nullable().optional(),
-  address: z.string().nullable().optional(),
-  imageUrl: z.string().nullable().optional(),
+  address: z.string().max(500).nullable().optional(),
+  imageUrl: z.string().max(500).nullable().optional(),
   opensAt: z.string().regex(timePattern, "Time must be HH:mm").nullable().optional(),
   closesAt: z.string().regex(timePattern, "Time must be HH:mm").nullable().optional(),
 });

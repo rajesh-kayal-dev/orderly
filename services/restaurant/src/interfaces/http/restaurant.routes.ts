@@ -13,6 +13,7 @@ import { requireAuth, type AuthenticatedRequest } from "./middleware/auth.middle
 import {
   createRestaurantSchema,
   listRestaurantsQuerySchema,
+  restaurantIdParamsSchema,
   updateRestaurantSchema,
 } from "./restaurant.schemas.js";
 
@@ -100,7 +101,8 @@ export const createRestaurantRouter = ({
 
   router.get("/:id", async (req, res) => {
     try {
-      const restaurant = await getRestaurantUseCase(req.params.id!);
+      const { id } = restaurantIdParamsSchema.parse(req.params);
+      const restaurant = await getRestaurantUseCase(id);
       return void res.status(200).json({ success: true, data: restaurant });
     } catch (error) {
       return void mapErrorToResponse(res, error);

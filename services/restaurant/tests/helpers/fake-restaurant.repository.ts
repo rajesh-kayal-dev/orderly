@@ -3,6 +3,7 @@ import type {
   CreateMenuCategoryData,
   CreateMenuItemData,
   MenuRepository,
+  UpdateMenuCategoryData,
   UpdateMenuItemData,
 } from "../../src/domain/menu/menu.repository.js";
 import type {
@@ -226,6 +227,19 @@ export function createFakeRepository(): FakeRepositoryHandle {
           .filter((i) => i.categoryId === cat.id)
           .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
       }));
+    },
+
+    async updateCategory(id, data) {
+      const idx = categories.findIndex((c) => c.id === id);
+      if (idx === -1) return null;
+      const existing = categories[idx]!;
+      const updated: MenuCategory = {
+        ...existing,
+        name: data.name ?? existing.name,
+        sortOrder: data.sortOrder ?? existing.sortOrder,
+      };
+      categories[idx] = updated;
+      return updated;
     },
 
     async createMenuItem(data) {

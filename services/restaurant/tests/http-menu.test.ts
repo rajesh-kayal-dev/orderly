@@ -78,6 +78,57 @@ describe("Menu HTTP", () => {
     });
   });
 
+  describe("Update category", () => {
+    it("updates category name and sortOrder", async () => {
+      const rId = api.handle.getRestaurantByOwnerId("menu-owner")!.id;
+      api.handle.seedCategory(makeCategory("upd-cat", { restaurantId: rId, name: "Old Name", sortOrder: 1 }));
+
+      const res = await request(api.baseUrl, "/menu/categories/upd-cat", {
+        method: "PUT",
+        token: ownerToken,
+        body: { name: "New Name", sortOrder: 5 },
+      });
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual(data(res)?.name, "New Name");
+      assert.strictEqual(data(res)?.sortOrder, 5);
+    });
+
+    it("returns 404 for foreign category", async () => {
+      const otherToken = api.issueToken("cat-other-owner");
+      await request(api.baseUrl, "/restaurants", {
+        method: "POST",
+        token: otherToken,
+        body: { name: "Other Cats" },
+      });
+      const otherRId = api.handle.getRestaurantByOwnerId("cat-other-owner")!.id;
+      api.handle.seedCategory(makeCategory("foreign-cat-upd", { restaurantId: otherRId, name: "Foreign" }));
+
+      const res = await request(api.baseUrl, "/menu/categories/foreign-cat-upd", {
+        method: "PUT",
+        token: ownerToken,
+        body: { name: "Hijack" },
+      });
+      assert.strictEqual(res.status, 404);
+    });
+
+    it("returns 404 for missing category", async () => {
+      const res = await request(api.baseUrl, "/menu/categories/does-not-exist", {
+        method: "PUT",
+        token: ownerToken,
+        body: { name: "Nothing" },
+      });
+      assert.strictEqual(res.status, 404);
+    });
+
+    it("returns 401 without token", async () => {
+      const res = await request(api.baseUrl, "/menu/categories/upd-cat", {
+        method: "PUT",
+        body: { name: "No Auth" },
+      });
+      assert.strictEqual(res.status, 401);
+    });
+  });
+
   describe("Menu items", () => {
     it("creates an item without category", async () => {
       const res = await request(api.baseUrl, "/menu", {
@@ -194,6 +245,28 @@ describe("Menu HTTP", () => {
         body: { name: "Nothing" },
       });
       assert.strictEqual(res.status, 404);
+    });
+
+    it("clears categoryId while preserving other fields", async () => {
+      const rId = api.handle.getRestaurantByOwnerId("menu-owner")!.id;
+      const category = api.handle.getCategoriesByRestaurantId(rId)[0];
+
+      const create = await request(api.baseUrl, "/menu", {
+        method: "POST",
+        token: ownerToken,
+        body: { name: "Detach Me", price: 6.0, categoryId: category?.id },
+      });
+      const itemId = (data(create) as Record<string, unknown>).id as string;
+
+      const res = await request(api.baseUrl, `/menu/${itemId}`, {
+        method: "PUT",
+        token: ownerToken,
+        body: { categoryId: null, name: "Detached", price: 7.5 },
+      });
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual(data(res)?.name, "Detached");
+      assert.strictEqual(data(res)?.categoryId, null);
+      assert.ok((data(res)?.price as string).startsWith("7.5"));
     });
   });
 
