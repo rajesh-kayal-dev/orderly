@@ -25,3 +25,17 @@ export class PaymentValidationError extends Error {
     this.name = "PaymentValidationError";
   }
 }
+
+export class PaymentProviderError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PaymentProviderError";
+  }
+}
+
+export class PaymentVerificationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PaymentVerificationError";
+  }
+}

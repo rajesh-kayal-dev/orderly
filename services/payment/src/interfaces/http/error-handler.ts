@@ -6,6 +6,8 @@ const ERROR_STATUS_BY_NAME: Record<string, number> = {
   PaymentForbiddenError: 403,
   PaymentStateConflictError: 409,
   PaymentValidationError: 400,
+  PaymentProviderError: 502,
+  PaymentVerificationError: 400,
 };
 
 export function mapErrorToResponse(res: Response, error: unknown): void {
