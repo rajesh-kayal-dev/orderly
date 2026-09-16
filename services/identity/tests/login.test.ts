@@ -1,0 +1,140 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import bcrypt from "bcryptjs";
+import {
+  InvalidCredentialsError,
+  LoginUser,
+  SuspendedAccountError,
+} from "../src/application/auth/login-user.js";
+import { loginUserSchema } from "../src/interfaces/http/auth.schemas.js";
+import type { UserRepository } from "../src/domain/user/user.repository.js";
+import type { User, UserCredentials } from "../src/domain/user/user.types.js";
+
+const passwordHash = bcrypt.hashSync("correct-password", 4);
+
+function createCredentials(overrides: Partial<UserCredentials> = {}): UserCredentials {
+  return {
+    id: "user-1",
+    email: "user@example.com",
+    fullName: "Test User",
+    phoneNumber: null,
+    role: "CUSTOMER",
+    status: "ACTIVE",
+    passwordHash,
+    ...overrides,
+  };
+}
+
+function createRepository(credentials: UserCredentials | null) {
+  const lookupEmails: string[] = [];
+
+  const repo: UserRepository = {
+    async findByEmail(email) {
+      if (!credentials || email !== credentials.email) {
+        return null;
+      }
+      const user: User = {
+        ...credentials,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      return user;
+    },
+    async findCredentialsByEmail(email) {
+      lookupEmails.push(email);
+      if (!credentials || email !== credentials.email) {
+        return null;
+      }
+      return credentials;
+    },
+    async create() {
+      throw new Error("create is not used in login tests");
+    },
+  };
+
+  return { repo, lookupEmails };
+}
+
+function createIssuer() {
+  const issued: Array<{ subject: string; role: string }> = [];
+  const issuer = (subject: string, role: string) => {
+    issued.push({ subject, role });
+    return "test-token";
+  };
+  return { issued, issuer };
+}
+
+test("valid login issues a token with user id and role, returns safe user", async () => {
+  const { repo, lookupEmails } = createRepository(createCredentials());
+  const { issued, issuer } = createIssuer();
+  const login = new LoginUser(repo, issuer);
+
+  const result = await login.execute({
+    email: "  User@Example.COM  ",
+    password: "correct-password",
+  });
+
+  assert.equal(result.accessToken, "test-token");
+  assert.deepEqual(issued, [{ subject: "user-1", role: "CUSTOMER" }]);
+  assert.equal(result.user.id, "user-1");
+  assert.equal(result.user.email, "user@example.com");
+  assert.equal("passwordHash" in result.user, false);
+  assert.deepEqual(lookupEmails, ["user@example.com"]);
+});
+
+test("wrong password throws InvalidCredentialsError and issues no token", async () => {
+  const { repo } = createRepository(createCredentials());
+  const { issued, issuer } = createIssuer();
+  const login = new LoginUser(repo, issuer);
+
+  await assert.rejects(
+    login.execute({ email: "user@example.com", password: "wrong-password" }),
+    InvalidCredentialsError,
+  );
+  assert.deepEqual(issued, []);
+});
+
+test("unknown email throws InvalidCredentialsError and issues no token", async () => {
+  const { repo } = createRepository(createCredentials());
+  const { issued, issuer } = createIssuer();
+  const login = new LoginUser(repo, issuer);
+
+  await assert.rejects(
+    login.execute({ email: "nobody@example.com", password: "correct-password" }),
+    InvalidCredentialsError,
+  );
+  assert.deepEqual(issued, []);
+});
+
+test("suspended user with valid password throws SuspendedAccountError and issues no token", async () => {
+  const { repo } = createRepository(createCredentials({ status: "SUSPENDED" }));
+  const { issued, issuer } = createIssuer();
+  const login = new LoginUser(repo, issuer);
+
+  await assert.rejects(
+    login.execute({ email: "user@example.com", password: "correct-password" }),
+    SuspendedAccountError,
+  );
+  assert.deepEqual(issued, []);
+});
+
+test("NULL passwordHash is treated as invalid credentials", async () => {
+  const { repo } = createRepository(createCredentials({ passwordHash: null }));
+  const { issued, issuer } = createIssuer();
+  const login = new LoginUser(repo, issuer);
+
+  await assert.rejects(
+    login.execute({ email: "user@example.com", password: "correct-password" }),
+    InvalidCredentialsError,
+  );
+  assert.deepEqual(issued, []);
+});
+
+test("malformed request fails zod validation", () => {
+  assert.throws(() => loginUserSchema.parse({}), Error);
+  assert.throws(() => loginUserSchema.parse({ email: "not-an-email" }), Error);
+  assert.throws(
+    () => loginUserSchema.parse({ email: "user@example.com", password: "" }),
+    Error,
+  );
+});

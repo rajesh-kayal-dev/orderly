@@ -1,4 +1,4 @@
-﻿import type { User } from "./user.types.js";
+﻿import type { User, UserCredentials } from "./user.types.js";
 
 export interface CreateUserData {
   email: string;
@@ -8,5 +8,6 @@ export interface CreateUserData {
 
 export interface UserRepository {
   findByEmail(email: string): Promise<User | null>;
+  findCredentialsByEmail(email: string): Promise<UserCredentials | null>;
   create(data: CreateUserData): Promise<User>;
 }
