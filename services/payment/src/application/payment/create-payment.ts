@@ -1,8 +1,14 @@
 import type { Decimal } from "decimal.js";
 import type { PaymentRepository } from "../../domain/payment/payment.repository.js";
 import type { PaymentProvider } from "../../domain/payment/payment.provider.js";
+import type { OrderClient } from "../../domain/order/order.client.js";
 import type { Payment, PaymentMethod } from "../../domain/payment/payment.types.js";
-import { PaymentStateConflictError, PaymentValidationError } from "./errors.js";
+import {
+  PaymentForbiddenError,
+  PaymentProviderError,
+  PaymentStateConflictError,
+  PaymentValidationError,
+} from "./errors.js";
 
 export interface CreatePaymentInput {
   orderId: string;
@@ -14,11 +20,16 @@ export interface CreatePaymentInput {
 export interface CreatePaymentDeps {
   payments: PaymentRepository;
   provider: PaymentProvider | null;
+  orderClient: OrderClient | null;
 }
 
 export const createPayment =
   (deps: CreatePaymentDeps) =>
-  async (customerId: string, input: CreatePaymentInput): Promise<Payment> => {
+  async (
+    customerId: string,
+    input: CreatePaymentInput,
+    authToken?: string,
+  ): Promise<Payment> => {
     const method = input.method ?? "cod";
     const currency = input.currency ?? "INR";
 
@@ -35,6 +46,26 @@ export const createPayment =
 
       if (existing.status === "pending") {
         return existing;
+      }
+    }
+
+    if (deps.orderClient) {
+      if (!authToken) {
+        throw new PaymentValidationError("Authentication token is required to create a payment");
+      }
+
+      const orderTotal = await deps.orderClient.getOrderTotal(input.orderId, authToken);
+
+      if (!orderTotal) {
+        throw new PaymentProviderError("Order not found");
+      }
+
+      if (orderTotal.customerId !== customerId) {
+        throw new PaymentForbiddenError();
+      }
+
+      if (!orderTotal.totalAmount.equals(input.amount)) {
+        throw new PaymentValidationError("Payment amount does not match order total");
       }
     }
 

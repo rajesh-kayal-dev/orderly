@@ -24,7 +24,7 @@ describe("createPayment", () => {
   it("creates a pending COD payment without invoking a provider", async () => {
     const handle = createFakePaymentRepository();
     const provider = createFakePaymentProvider();
-    const useCase = createPayment({ payments: handle.repo, provider });
+    const useCase = createPayment({ payments: handle.repo, provider, orderClient: null });
 
     const payment = await useCase("customer-1", {
       orderId: "order-1",
@@ -46,7 +46,7 @@ describe("createPayment", () => {
   it("creates an online payment through the provider and stores the reference", async () => {
     const handle = createFakePaymentRepository();
     const provider = createFakePaymentProvider();
-    const useCase = createPayment({ payments: handle.repo, provider });
+    const useCase = createPayment({ payments: handle.repo, provider, orderClient: null });
 
     const payment = await useCase("customer-1", {
       orderId: "order-1",
@@ -63,7 +63,7 @@ describe("createPayment", () => {
 
   it("rejects online payment when no provider is configured", async () => {
     const handle = createFakePaymentRepository();
-    const useCase = createPayment({ payments: handle.repo, provider: null });
+    const useCase = createPayment({ payments: handle.repo, provider: null, orderClient: null });
 
     await assert.rejects(
       useCase("customer-1", { orderId: "order-1", amount, method: "online" }),
@@ -75,7 +75,7 @@ describe("createPayment", () => {
 
   it("rejects a non-positive amount", async () => {
     const handle = createFakePaymentRepository();
-    const useCase = createPayment({ payments: handle.repo, provider: null });
+    const useCase = createPayment({ payments: handle.repo, provider: null, orderClient: null });
 
     await assert.rejects(
       useCase("customer-1", { orderId: "order-1", amount: new Decimal(0), method: "cod" }),
@@ -95,7 +95,7 @@ describe("createPayment", () => {
       amount,
     });
     handle.seedPayment(existing);
-    const useCase = createPayment({ payments: handle.repo, provider: null });
+    const useCase = createPayment({ payments: handle.repo, provider: null, orderClient: null });
 
     const payment = await useCase("customer-1", { orderId: "order-1", amount });
 
@@ -108,7 +108,7 @@ describe("createPayment", () => {
     handle.seedPayment(
       makePayment("payment-1", { orderId: "order-1", customerId: "customer-1", status: "paid" }),
     );
-    const useCase = createPayment({ payments: handle.repo, provider: null });
+    const useCase = createPayment({ payments: handle.repo, provider: null, orderClient: null });
 
     await assert.rejects(
       useCase("customer-1", { orderId: "order-1", amount }),
@@ -128,7 +128,7 @@ describe("createPayment", () => {
         status: "failed",
       }),
     );
-    const useCase = createPayment({ payments: handle.repo, provider: null });
+    const useCase = createPayment({ payments: handle.repo, provider: null, orderClient: null });
 
     const payment = await useCase("customer-1", { orderId: "order-1", amount });
 

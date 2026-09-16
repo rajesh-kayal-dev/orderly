@@ -14,6 +14,7 @@ export interface ProviderPaymentIntent {
 export interface VerifyProviderPaymentInput {
   providerReference: string;
   providerPaymentId: string;
+  providerPaymentSignature: string;
 }
 
 export interface PaymentProvider {

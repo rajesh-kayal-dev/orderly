@@ -3,6 +3,7 @@ import { once } from "node:events";
 import { createServer, type Server } from "node:http";
 import express, { type Express } from "express";
 import jwt from "jsonwebtoken";
+import type { OrderClient } from "../../src/domain/order/order.client.js";
 import type { PaymentProvider } from "../../src/domain/payment/payment.provider.js";
 import { createPaymentRouter } from "../../src/interfaces/http/payment.routes.js";
 import { createTokenVerifier } from "../../src/infrastructure/security/token.js";
@@ -34,6 +35,7 @@ export interface ApiResponse {
 
 export interface CreateHttpTestApiOptions {
   provider?: PaymentProvider | null;
+  orderClient?: OrderClient | null;
 }
 
 export async function createHttpTestApi(
@@ -50,6 +52,7 @@ export async function createHttpTestApi(
     createPaymentRouter({
       paymentRepository: handle.repo,
       paymentProvider: options.provider ?? null,
+      orderClient: options.orderClient ?? null,
       tokenVerifier,
     }),
   );
