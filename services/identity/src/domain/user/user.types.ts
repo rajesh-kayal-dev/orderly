@@ -18,3 +18,13 @@ export interface User {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface UserCredentials {
+  id: string;
+  email: string;
+  fullName: string;
+  phoneNumber: string | null;
+  role: UserRole;
+  status: "ACTIVE" | "SUSPENDED";
+  passwordHash: string | null;
+}
