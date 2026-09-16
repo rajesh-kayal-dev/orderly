@@ -5,104 +5,109 @@ import { listUsers } from "../../application/account/list-users.js";
 import { rejectUser } from "../../application/account/reject-user.js";
 import { updateUserStatus } from "../../application/account/update-user-status.js";
 import { USER_ROLES } from "../../domain/user/user.types.js";
-import { prisma } from "../../infrastructure/database/prisma.js";
-import { PrismaUserRepository } from "../../infrastructure/database/repositories/prisma-user.repository.js";
-import { getJwtService } from "../../infrastructure/security/jwt.js";
+import type { UserRepository } from "../../domain/user/user.repository.js";
+import type { JwtService } from "../../infrastructure/security/jwt.js";
 import { approvalParamsSchema, listUsersQuerySchema, statusBodySchema, statusParamsSchema } from "./admin.schemas.js";
 import { mapErrorToResponse } from "./error-handler.js";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "./middleware/auth.middleware.js";
 
-const router: ExpressRouter = Router();
+export interface AdminRouterDeps {
+  userRepository: UserRepository;
+  jwtService: JwtService;
+}
 
-const userRepository = new PrismaUserRepository(prisma);
-const requireAuthMiddleware = requireAuth({
-  verifyAccessToken: getJwtService().verifyAccessToken,
-  findUserById: userRepository.findById.bind(userRepository),
-});
-const requireAdmin = requireRole(USER_ROLES.ADMIN);
+export const createAdminRouter = ({ userRepository, jwtService }: AdminRouterDeps): ExpressRouter => {
+  const router: ExpressRouter = Router();
 
-const listUsersUseCase = listUsers(userRepository);
-const listPendingApprovalsUseCase = listPendingApprovals(userRepository);
-const updateUserStatusUseCase = updateUserStatus(userRepository);
-const approveUserUseCase = approveUser(userRepository);
-const rejectUserUseCase = rejectUser(userRepository);
+  const requireAuthMiddleware = requireAuth({
+    verifyAccessToken: jwtService.verifyAccessToken,
+    findUserById: userRepository.findById.bind(userRepository),
+  });
+  const requireAdmin = requireRole(USER_ROLES.ADMIN);
 
-router.use(requireAuthMiddleware, requireAdmin);
+  const listUsersUseCase = listUsers(userRepository);
+  const listPendingApprovalsUseCase = listPendingApprovals(userRepository);
+  const updateUserStatusUseCase = updateUserStatus(userRepository);
+  const approveUserUseCase = approveUser(userRepository);
+  const rejectUserUseCase = rejectUser(userRepository);
 
-router.get("/users", async (req, res) => {
-  try {
-    const query = listUsersQuerySchema.parse(req.query);
+  router.use(requireAuthMiddleware, requireAdmin);
 
-    const result = await listUsersUseCase(query);
+  router.get("/users", async (req, res) => {
+    try {
+      const query = listUsersQuerySchema.parse(req.query);
 
-    return res.status(200).json({
-      success: true,
-      data: result,
-    });
-  } catch (error) {
-    return void mapErrorToResponse(res, error);
-  }
-});
+      const result = await listUsersUseCase(query);
 
-router.put("/users/:id/status", async (req, res) => {
-  try {
-    const { id } = statusParamsSchema.parse(req.params);
-    const { status } = statusBodySchema.parse(req.body);
-    const actorId = (req as AuthenticatedRequest).user.id;
+      return res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      return void mapErrorToResponse(res, error);
+    }
+  });
 
-    const user = await updateUserStatusUseCase(id, status, actorId);
+  router.put("/users/:id/status", async (req, res) => {
+    try {
+      const { id } = statusParamsSchema.parse(req.params);
+      const { status } = statusBodySchema.parse(req.body);
+      const actorId = (req as AuthenticatedRequest).user.id;
 
-    return res.status(200).json({
-      success: true,
-      data: user,
-    });
-  } catch (error) {
-    return void mapErrorToResponse(res, error);
-  }
-});
+      const user = await updateUserStatusUseCase(id, status, actorId);
 
-router.get("/approvals", async (req, res) => {
-  try {
-    const approvals = await listPendingApprovalsUseCase();
+      return res.status(200).json({
+        success: true,
+        data: user,
+      });
+    } catch (error) {
+      return void mapErrorToResponse(res, error);
+    }
+  });
 
-    return res.status(200).json({
-      success: true,
-      data: approvals,
-    });
-  } catch (error) {
-    return void mapErrorToResponse(res, error);
-  }
-});
+  router.get("/approvals", async (req, res) => {
+    try {
+      const approvals = await listPendingApprovalsUseCase();
 
-router.post("/approvals/:id/approve", async (req, res) => {
-  try {
-    const { id } = approvalParamsSchema.parse(req.params);
-    const actorId = (req as AuthenticatedRequest).user.id;
+      return res.status(200).json({
+        success: true,
+        data: approvals,
+      });
+    } catch (error) {
+      return void mapErrorToResponse(res, error);
+    }
+  });
 
-    const user = await approveUserUseCase(id, actorId);
+  router.post("/approvals/:id/approve", async (req, res) => {
+    try {
+      const { id } = approvalParamsSchema.parse(req.params);
+      const actorId = (req as AuthenticatedRequest).user.id;
 
-    return res.status(200).json({
-      success: true,
-      data: user,
-    });
-  } catch (error) {
-    return void mapErrorToResponse(res, error);
-  }
-});
+      const user = await approveUserUseCase(id, actorId);
 
-router.post("/approvals/:id/reject", async (req, res) => {
-  try {
-    const { id } = approvalParamsSchema.parse(req.params);
+      return res.status(200).json({
+        success: true,
+        data: user,
+      });
+    } catch (error) {
+      return void mapErrorToResponse(res, error);
+    }
+  });
 
-    await rejectUserUseCase(id);
+  router.post("/approvals/:id/reject", async (req, res) => {
+    try {
+      const { id } = approvalParamsSchema.parse(req.params);
 
-    return res.status(501).json({
-      success: false,
-      message: "Rejection persistence is not implemented",
-    });
-  } catch (error) {
-    return void mapErrorToResponse(res, error);
-  }
-});
+      await rejectUserUseCase(id);
 
-export { router as adminRouter };
+      return res.status(501).json({
+        success: false,
+        message: "Rejection persistence is not implemented",
+      });
+    } catch (error) {
+      return void mapErrorToResponse(res, error);
+    }
+  });
+
+  return router;
+};

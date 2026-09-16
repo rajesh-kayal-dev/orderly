@@ -2,6 +2,8 @@ import type { Response } from "express";
 import { ZodError } from "zod";
 
 const ERROR_STATUS_BY_NAME: Record<string, number> = {
+  InvalidCredentialsError: 401,
+  EmailAlreadyExistsError: 409,
   UserNotFoundError: 404,
   InvalidStatusTransitionError: 409,
   SelfStatusChangeError: 409,

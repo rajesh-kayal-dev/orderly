@@ -1,14 +1,20 @@
 ﻿import "dotenv/config";
 import express from "express";
-import { adminRouter } from "./interfaces/http/admin.routes.js";
-import { authRouter } from "./interfaces/http/auth.routes.js";
+import { createAdminRouter } from "./interfaces/http/admin.routes.js";
+import { createAuthRouter } from "./interfaces/http/auth.routes.js";
+import { PrismaUserRepository } from "./infrastructure/database/repositories/prisma-user.repository.js";
+import { prisma } from "./infrastructure/database/prisma.js";
+import { getJwtService } from "./infrastructure/security/jwt.js";
 
 const app = express();
 
+const userRepository = new PrismaUserRepository(prisma);
+const jwtService = getJwtService();
+
 app.use(express.json());
 
-app.use("/auth", authRouter);
-app.use("/admin", adminRouter);
+app.use("/auth", createAuthRouter({ userRepository, jwtService }));
+app.use("/admin", createAdminRouter({ userRepository, jwtService }));
 
 app.get("/health", (_req, res) => {
   res.json({

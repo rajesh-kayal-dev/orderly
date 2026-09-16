@@ -30,9 +30,18 @@ export const requireAuth =
       return;
     }
 
+    const token = header.slice("Bearer ".length).trim();
+
+    let payload: AccessToken;
+
     try {
-      const token = header.slice("Bearer ".length).trim();
-      const payload = deps.verifyAccessToken(token);
+      payload = deps.verifyAccessToken(token);
+    } catch {
+      res.status(401).json({ success: false, message: "Invalid or expired token" });
+      return;
+    }
+
+    try {
       const user = await deps.findUserById(payload.sub);
 
       if (!user) {
@@ -47,8 +56,9 @@ export const requireAuth =
 
       (req as AuthenticatedRequest).user = user;
       next();
-    } catch {
-      res.status(401).json({ success: false, message: "Invalid or expired token" });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ success: false, message: "Internal server error" });
     }
   };
 
