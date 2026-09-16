@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import bcrypt from "bcryptjs";
 import {
   InvalidCredentialsError,
-  LoginUser,
+  loginUser,
   PendingApprovalAccountError,
   SuspendedAccountError,
 } from "../src/application/auth/login-user.js";
@@ -88,9 +88,9 @@ function createIssuer() {
 test("valid login issues a token with user id and role, returns safe user", async () => {
   const { repo, lookupEmails } = createRepository(createCredentials());
   const { issued, issuer } = createIssuer();
-  const login = new LoginUser(repo, issuer);
+  const login = loginUser(repo, issuer);
 
-  const result = await login.execute({
+  const result = await login({
     email: "  User@Example.COM  ",
     password: "correct-password",
   });
@@ -106,10 +106,10 @@ test("valid login issues a token with user id and role, returns safe user", asyn
 test("wrong password throws InvalidCredentialsError and issues no token", async () => {
   const { repo } = createRepository(createCredentials());
   const { issued, issuer } = createIssuer();
-  const login = new LoginUser(repo, issuer);
+  const login = loginUser(repo, issuer);
 
   await assert.rejects(
-    login.execute({ email: "user@example.com", password: "wrong-password" }),
+    login({ email: "user@example.com", password: "wrong-password" }),
     InvalidCredentialsError,
   );
   assert.deepEqual(issued, []);
@@ -118,10 +118,10 @@ test("wrong password throws InvalidCredentialsError and issues no token", async 
 test("unknown email throws InvalidCredentialsError and issues no token", async () => {
   const { repo } = createRepository(createCredentials());
   const { issued, issuer } = createIssuer();
-  const login = new LoginUser(repo, issuer);
+  const login = loginUser(repo, issuer);
 
   await assert.rejects(
-    login.execute({ email: "nobody@example.com", password: "correct-password" }),
+    login({ email: "nobody@example.com", password: "correct-password" }),
     InvalidCredentialsError,
   );
   assert.deepEqual(issued, []);
@@ -130,10 +130,10 @@ test("unknown email throws InvalidCredentialsError and issues no token", async (
 test("suspended user with valid password throws SuspendedAccountError and issues no token", async () => {
   const { repo } = createRepository(createCredentials({ status: "SUSPENDED" }));
   const { issued, issuer } = createIssuer();
-  const login = new LoginUser(repo, issuer);
+  const login = loginUser(repo, issuer);
 
   await assert.rejects(
-    login.execute({ email: "user@example.com", password: "correct-password" }),
+    login({ email: "user@example.com", password: "correct-password" }),
     SuspendedAccountError,
   );
   assert.deepEqual(issued, []);
@@ -142,10 +142,10 @@ test("suspended user with valid password throws SuspendedAccountError and issues
 test("NULL passwordHash is treated as invalid credentials", async () => {
   const { repo } = createRepository(createCredentials({ passwordHash: null }));
   const { issued, issuer } = createIssuer();
-  const login = new LoginUser(repo, issuer);
+  const login = loginUser(repo, issuer);
 
   await assert.rejects(
-    login.execute({ email: "user@example.com", password: "correct-password" }),
+    login({ email: "user@example.com", password: "correct-password" }),
     InvalidCredentialsError,
   );
   assert.deepEqual(issued, []);
@@ -154,10 +154,10 @@ test("NULL passwordHash is treated as invalid credentials", async () => {
 test("pending-approval user with valid password throws PendingApprovalAccountError and issues no token", async () => {
   const { repo } = createRepository(createCredentials({ status: "PENDING_APPROVAL", role: "RESTAURANT" }));
   const { issued, issuer } = createIssuer();
-  const login = new LoginUser(repo, issuer);
+  const login = loginUser(repo, issuer);
 
   await assert.rejects(
-    login.execute({ email: "user@example.com", password: "correct-password" }),
+    login({ email: "user@example.com", password: "correct-password" }),
     PendingApprovalAccountError,
   );
   assert.deepEqual(issued, []);

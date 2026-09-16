@@ -35,16 +35,12 @@ export class PendingApprovalAccountError extends Error {
   }
 }
 
-export class LoginUser {
-  constructor(
-    private readonly users: UserRepository,
-    private readonly issueAccessToken: AccessTokenIssuer,
-  ) {}
-
-  async execute(input: LoginUserInput): Promise<LoginUserResult> {
+export const loginUser =
+  (users: UserRepository, issueAccessToken: AccessTokenIssuer) =>
+  async (input: LoginUserInput): Promise<LoginUserResult> => {
     const email = input.email.trim().toLowerCase();
 
-    const credentials = await this.users.findCredentialsByEmail(email);
+    const credentials = await users.findCredentialsByEmail(email);
 
     if (!credentials || !credentials.passwordHash) {
       throw new InvalidCredentialsError();
@@ -70,7 +66,7 @@ export class LoginUser {
       throw new PendingApprovalAccountError();
     }
 
-    const accessToken = this.issueAccessToken(credentials.id, credentials.role);
+    const accessToken = issueAccessToken(credentials.id, credentials.role);
 
     const { passwordHash: _passwordHash, ...user } = credentials;
 
@@ -78,5 +74,4 @@ export class LoginUser {
       accessToken,
       user,
     };
-  }
-}
+  };

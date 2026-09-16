@@ -2,11 +2,11 @@
 import { ZodError } from "zod";
 import {
   EmailAlreadyExistsError,
-  RegisterUser,
+  registerUser,
 } from "../../application/auth/register-user.js";
 import {
   InvalidCredentialsError,
-  LoginUser,
+  loginUser,
   PendingApprovalAccountError,
   SuspendedAccountError,
 } from "../../application/auth/login-user.js";
@@ -23,8 +23,8 @@ import { requireAuth, type AuthenticatedRequest } from "./middleware/auth.middle
 const router: ExpressRouter = Router();
 
 const userRepository = new PrismaUserRepository(prisma);
-const registerUser = new RegisterUser(userRepository);
-const loginUser = new LoginUser(userRepository, getJwtService().issueAccessToken);
+const registerUserUseCase = registerUser(userRepository);
+const loginUserUseCase = loginUser(userRepository, getJwtService().issueAccessToken);
 const requireAuthMiddleware = requireAuth({
   verifyAccessToken: getJwtService().verifyAccessToken,
   findUserById: userRepository.findById.bind(userRepository),
@@ -37,7 +37,7 @@ router.post("/register", async (req, res) => {
   try {
     const input = registerUserSchema.parse(req.body);
 
-    const user = await registerUser.execute(input);
+    const user = await registerUserUseCase(input);
 
     return res.status(201).json({
       success: true,
@@ -72,7 +72,7 @@ router.post("/login", async (req, res) => {
   try {
     const input = loginUserSchema.parse(req.body);
 
-    const result = await loginUser.execute(input);
+    const result = await loginUserUseCase(input);
 
     return res.status(200).json({
       success: true,
