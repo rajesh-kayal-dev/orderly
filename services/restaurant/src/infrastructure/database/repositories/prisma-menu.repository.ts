@@ -3,6 +3,7 @@ import type {
   CreateMenuCategoryData,
   CreateMenuItemData,
   MenuRepository,
+  UpdateMenuCategoryData,
   UpdateMenuItemData,
 } from "../../../domain/menu/menu.repository.js";
 import type {
@@ -76,6 +77,23 @@ export class PrismaMenuRepository implements MenuRepository {
       createdAt: category.createdAt,
       items: category.menuItems,
     }));
+  }
+
+  async updateCategory(id: string, data: UpdateMenuCategoryData): Promise<MenuCategory | null> {
+    const existing = await this.db.menuCategory.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return null;
+    }
+
+    return this.db.menuCategory.update({
+      where: { id },
+      data,
+      select: safeCategorySelect,
+    });
   }
 
   async createMenuItem(data: CreateMenuItemData): Promise<MenuItem> {

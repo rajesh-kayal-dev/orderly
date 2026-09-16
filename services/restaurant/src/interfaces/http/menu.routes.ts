@@ -5,6 +5,7 @@ import { getFullMenu } from "../../application/menu/get-full-menu.js";
 import { createMenuItem } from "../../application/menu/create-menu-item.js";
 import { listMenuItems } from "../../application/menu/list-menu-items.js";
 import { updateMenuItem } from "../../application/menu/update-menu-item.js";
+import { updateMenuCategory } from "../../application/menu/update-menu-category.js";
 import { toggleMenuItemAvailability } from "../../application/menu/toggle-menu-item-availability.js";
 import type { MenuRepository } from "../../domain/menu/menu.repository.js";
 import type { RestaurantRepository } from "../../domain/restaurant/restaurant.repository.js";
@@ -12,11 +13,13 @@ import type { TokenVerifier } from "../../infrastructure/security/token.js";
 import { mapErrorToResponse } from "./error-handler.js";
 import { requireAuth, type AuthenticatedRequest } from "./middleware/auth.middleware.js";
 import {
+  categoryIdParamsSchema,
   createCategorySchema,
   createMenuItemSchema,
   listMenuItemsQuerySchema,
   menuItemIdParamsSchema,
   toggleAvailabilityBodySchema,
+  updateCategorySchema,
   updateMenuItemSchema,
 } from "./menu.schemas.js";
 
@@ -39,6 +42,7 @@ export const createMenuRouter = ({
   const createMenuItemUseCase = createMenuItem(restaurantRepository, menuRepository);
   const listMenuItemsUseCase = listMenuItems(menuRepository);
   const updateMenuItemUseCase = updateMenuItem(restaurantRepository, menuRepository);
+  const updateMenuCategoryUseCase = updateMenuCategory(restaurantRepository, menuRepository);
   const toggleAvailabilityUseCase = toggleMenuItemAvailability(restaurantRepository, menuRepository);
   const requireAuthMiddleware = requireAuth({ verifyAccessToken: tokenVerifier.verify });
 
@@ -56,6 +60,17 @@ export const createMenuRouter = ({
     try {
       const categories = await listCategoriesUseCase(req.params.restaurantId!);
       return void res.status(200).json({ success: true, data: categories });
+    } catch (error) {
+      return void mapErrorToResponse(res, error);
+    }
+  });
+
+  router.put("/categories/:id", requireAuthMiddleware, async (req, res) => {
+    try {
+      const { id } = categoryIdParamsSchema.parse(req.params);
+      const input = updateCategorySchema.parse(req.body);
+      const category = await updateMenuCategoryUseCase((req as AuthenticatedRequest).userId, id, input);
+      return void res.status(200).json({ success: true, data: category });
     } catch (error) {
       return void mapErrorToResponse(res, error);
     }

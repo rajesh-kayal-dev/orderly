@@ -7,6 +7,11 @@ export interface CreateMenuCategoryData {
   sortOrder?: number;
 }
 
+export interface UpdateMenuCategoryData {
+  name?: string;
+  sortOrder?: number;
+}
+
 export interface CreateMenuItemData {
   restaurantId: string;
   categoryId?: string;
@@ -31,6 +36,7 @@ export interface MenuRepository {
   findCategoryById(id: string): Promise<MenuCategory | null>;
   listCategoriesByRestaurant(restaurantId: string): Promise<MenuCategory[]>;
   listCategoriesWithItems(restaurantId: string): Promise<MenuCategoryWithItems[]>;
+  updateCategory(id: string, data: UpdateMenuCategoryData): Promise<MenuCategory | null>;
   createMenuItem(data: CreateMenuItemData): Promise<MenuItem>;
   findMenuItemById(id: string): Promise<MenuItem | null>;
   listMenuItemsByRestaurant(restaurantId: string, categoryId?: string): Promise<MenuItem[]>;
