@@ -2,10 +2,12 @@ import "dotenv/config";
 import express from "express";
 import { createCartRouter } from "./interfaces/http/cart.routes.js";
 import { createOrderRouter } from "./interfaces/http/order.routes.js";
+import { createRestaurantOrderRouter } from "./interfaces/http/restaurant-order.routes.js";
 import { prisma } from "./infrastructure/database/prisma.js";
 import { PrismaCartRepository } from "./infrastructure/database/repositories/prisma-cart.repository.js";
 import { PrismaOrderRepository } from "./infrastructure/database/repositories/prisma-order.repository.js";
 import { HttpMenuCatalogClient } from "./infrastructure/http/http-menu-catalog.client.js";
+import { HttpRestaurantOwnershipClient } from "./infrastructure/http/http-restaurant-ownership.client.js";
 import { getTokenVerifier } from "./infrastructure/security/token.js";
 
 const app = express();
@@ -13,6 +15,9 @@ const app = express();
 const cartRepository = new PrismaCartRepository(prisma);
 const orderRepository = new PrismaOrderRepository(prisma);
 const menuCatalogClient = new HttpMenuCatalogClient(
+  process.env.RESTAURANT_SERVICE_URL ?? "http://localhost:3003",
+);
+const restaurantOwnershipClient = new HttpRestaurantOwnershipClient(
   process.env.RESTAURANT_SERVICE_URL ?? "http://localhost:3003",
 );
 const tokenVerifier = getTokenVerifier();
@@ -27,6 +32,11 @@ app.use(
 app.use(
   "/orders",
   createOrderRouter({ cartRepository, orderRepository, menuCatalogClient, tokenVerifier }),
+);
+
+app.use(
+  "/restaurant/orders",
+  createRestaurantOrderRouter({ orderRepository, restaurantOwnershipClient, tokenVerifier }),
 );
 
 app.get("/health", (_req, res) => {

@@ -12,6 +12,7 @@ import type {
   MenuCatalogItem,
   MenuCatalogRestaurant,
 } from "../../src/domain/menu-catalog/menu-catalog.client.js";
+import type { RestaurantOwnershipClient } from "../../src/domain/restaurant-ownership/restaurant-ownership.client.js";
 import type { Order, OrderStatus, PaymentStatus } from "../../src/domain/order/order.types.js";
 
 let cartSeq = 0;
@@ -76,6 +77,7 @@ export interface FakeRepositoryHandle {
   cartRepo: CartRepository;
   orderRepo: OrderRepository;
   catalogClient: MenuCatalogClient;
+  restaurantOwnershipClient: RestaurantOwnershipClient;
   seedCart(cart: Cart): void;
   seedCartItem(item: CartItem): void;
   updateCartItem(item: CartItem): void;
@@ -83,6 +85,7 @@ export interface FakeRepositoryHandle {
   seedOrderItem(orderId: string, item: Order["items"][number]): void;
   seedRestaurant(view: MenuCatalogRestaurant): void;
   seedMenuItem(view: MenuCatalogItem): void;
+  seedRestaurantOwnership(ownerId: string, restaurantId: string): void;
   getCarts(): Cart[];
   getOrders(): Order[];
   getRestaurants(): MenuCatalogRestaurant[];
@@ -98,6 +101,7 @@ export function createFakeRepositories(): FakeRepositoryHandle {
   const orders: Order[] = [];
   const restaurants: MenuCatalogRestaurant[] = [];
   const menuItems: MenuCatalogItem[] = [];
+  const restaurantOwnership: Record<string, string> = {};
 
   const nextCartId = (): string => `cart-${++cartSeq}`;
   const nextCartItemId = (): string => `cart-item-${++cartItemSeq}`;
@@ -221,6 +225,15 @@ export function createFakeRepositories(): FakeRepositoryHandle {
       return { orders: sliced, total } satisfies ListOrdersResult;
     },
 
+    async listOrdersByRestaurant(restaurantId, params: ListOrdersParams) {
+      const owned = orders
+        .filter((o) => o.restaurantId === restaurantId)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      const total = owned.length;
+      const sliced = owned.slice(params.offset, params.offset + params.limit);
+      return { orders: sliced, total } satisfies ListOrdersResult;
+    },
+
     async updateOrderStatus(id: string, status: OrderStatus) {
       const idx = orders.findIndex((o) => o.id === id);
       if (idx === -1) return null;
@@ -248,10 +261,18 @@ export function createFakeRepositories(): FakeRepositoryHandle {
     },
   };
 
+  const ownershipClient: RestaurantOwnershipClient = {
+    async getRestaurantByOwner(ownerId, _accessToken) {
+      const restaurantId = restaurantOwnership[ownerId];
+      return restaurantId ? { id: restaurantId } : null;
+    },
+  };
+
   return {
     cartRepo,
     orderRepo,
     catalogClient,
+    restaurantOwnershipClient: ownershipClient,
     seedCart(cart) {
       const idx = carts.findIndex((c) => c.id === cart.id);
       if (idx === -1) carts.push(cart);
@@ -285,6 +306,9 @@ export function createFakeRepositories(): FakeRepositoryHandle {
       const idx = menuItems.findIndex((i) => i.id === view.id);
       if (idx === -1) menuItems.push(view);
       else menuItems[idx] = view;
+    },
+    seedRestaurantOwnership(ownerId, restaurantId) {
+      restaurantOwnership[ownerId] = restaurantId;
     },
     getCarts: () => carts,
     getOrders: () => orders,

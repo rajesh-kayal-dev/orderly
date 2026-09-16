@@ -48,3 +48,19 @@ export const CANCELLABLE_STATUSES: readonly OrderStatus[] = ["placed", "accepted
 export function isCancellableStatus(status: OrderStatus): boolean {
   return CANCELLABLE_STATUSES.includes(status);
 }
+
+const ORDER_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+  placed: ["accepted", "cancelled"],
+  accepted: ["preparing", "cancelled"],
+  preparing: ["ready", "cancelled"],
+  ready: ["cancelled"],
+  assigned: [],
+  picked_up: [],
+  delivered: [],
+  cancelled: [],
+  refunded: [],
+};
+
+export function canTransitionOrderStatus(current: OrderStatus, next: OrderStatus): boolean {
+  return ORDER_TRANSITIONS[current]?.includes(next) ?? false;
+}

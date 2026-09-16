@@ -69,3 +69,17 @@ export class OrderStateConflictError extends Error {
     this.name = "OrderStateConflictError";
   }
 }
+
+export class OrderStatusTransitionError extends Error {
+  constructor(current: OrderStatus, target: OrderStatus) {
+    super(`Cannot change order status from ${current} to ${target}`);
+    this.name = "OrderStatusTransitionError";
+  }
+}
+
+export class RestaurantOwnershipError extends Error {
+  constructor() {
+    super("Restaurant profile does not exist for this user");
+    this.name = "RestaurantOwnershipError";
+  }
+}
