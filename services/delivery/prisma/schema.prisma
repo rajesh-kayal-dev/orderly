@@ -11,22 +11,23 @@ enum DeliveryStatus {
   pending
   assigned
   picked_up
+  in_transit
   delivered
   failed
 }
 
 model DeliveryPartner {
-  id           String    @id @default(uuid())
-  userId       String    @unique
-  vehicleType  String?
-  vehicleNumber String?
-  isAvailable  Boolean   @default(false)
-  latitude     Float?
-  longitude    Float?
+  id                 String    @id @default(uuid())
+  userId             String    @unique
+  vehicleType        String?
+  vehicleNumber      String?
+  isAvailable        Boolean   @default(false)
+  latitude           Float?
+  longitude          Float?
   lastLocationUpdate DateTime?
-  rating       Decimal   @default(5.0) @db.Decimal(3, 2)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  rating             Decimal   @default(5.0) @db.Decimal(3, 2)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   deliveries Delivery[]
 
@@ -34,15 +35,17 @@ model DeliveryPartner {
 }
 
 model Delivery {
-  id         String         @id @default(uuid())
-  orderId    String         @unique
-  partnerId  String?
-  status     DeliveryStatus @default(pending)
-  pickupTime DateTime?
+  id          String         @id @default(uuid())
+  orderId     String         @unique
+  partnerId   String?
+  status      DeliveryStatus @default(pending)
+  pickupTime  DateTime?
+  inTransitAt DateTime?
   deliveredAt DateTime?
-  distanceKm Decimal?       @db.Decimal(6, 2)
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
+  failedAt    DateTime?
+  distanceKm  Decimal?       @db.Decimal(6, 2)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
   partner DeliveryPartner? @relation(fields: [partnerId], references: [id], onDelete: SetNull)
 

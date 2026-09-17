@@ -55,16 +55,31 @@ export class PrismaDeliveryPartnerRepository implements DeliveryPartnerRepositor
   constructor(private readonly db: PrismaClient) {}
 
   async create(data: CreateDeliveryPartnerData): Promise<DeliveryPartner> {
-    return this.db.deliveryPartner
-      .create({
+    try {
+      const partner = await this.db.deliveryPartner.create({
         data: {
           userId: data.userId,
           vehicleType: data.vehicleType ?? DEFAULT_VEHICLE_TYPE,
           vehicleNumber: data.vehicleNumber,
         },
         select: safeDeliveryPartnerSelect,
-      })
-      .then(toDeliveryPartner);
+      });
+
+      return toDeliveryPartner(partner);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        const existing = await this.db.deliveryPartner.findUnique({
+          where: { userId: data.userId },
+          select: safeDeliveryPartnerSelect,
+        });
+
+        if (existing) {
+          return toDeliveryPartner(existing);
+        }
+      }
+
+      throw error;
+    }
   }
 
   async findProfileByUserId(userId: string): Promise<DeliveryPartner | null> {

@@ -8,6 +8,9 @@ const ERROR_STATUS_BY_NAME: Record<string, number> = {
   DeliveryForOrderNotFoundError: 404,
   DeliveryForOrderAlreadyExistsError: 409,
   DeliveryNotAvailableError: 409,
+  DeliveryPartnerUnavailableError: 409,
+  DeliveryStatusTransitionError: 409,
+  DeliveryNotAssignedToPartnerError: 403,
 };
 
 export function mapErrorToResponse(res: Response, error: unknown): void {
