@@ -4,6 +4,10 @@ import { ZodError } from "zod";
 const ERROR_STATUS_BY_NAME: Record<string, number> = {
   DeliveryPartnerNotFoundError: 404,
   DeliveryPartnerProfileNotFoundError: 404,
+  DeliveryNotFoundError: 404,
+  DeliveryForOrderNotFoundError: 404,
+  DeliveryForOrderAlreadyExistsError: 409,
+  DeliveryNotAvailableError: 409,
 };
 
 export function mapErrorToResponse(res: Response, error: unknown): void {
