@@ -5,7 +5,6 @@ import express, { type Express } from "express";
 import jwt from "jsonwebtoken";
 import { createDeliveryPartnerRouter } from "../../src/interfaces/http/delivery-partner.routes.js";
 import { createDeliveryRouter } from "../../src/interfaces/http/delivery.routes.js";
-import { createDeliveryPartnerRouter } from "../../src/interfaces/http/delivery-partner.routes.js";
 import { createTokenVerifier } from "../../src/infrastructure/security/token.js";
 import {
   createFakeDeliveryRepository,

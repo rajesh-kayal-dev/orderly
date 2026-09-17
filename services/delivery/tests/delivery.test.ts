@@ -24,18 +24,41 @@ describe("delivery assignment API", () => {
   }
 
   async function createPartnerProfile(userId: string): Promise<string> {
-    const token = api.issueToken(userId);
-    const res = await request(api.baseUrl, "/delivery-partners/me", { method: "POST", token });
+    const res = await request(api.baseUrl, "/delivery-partners/me", {
+      method: "POST",
+      token: api.issueToken(userId),
+    });
     assert.equal(res.status, 201);
     return String((data(res) as Record<string, unknown>).id);
   }
 
-  it("creates a pending delivery for a new order as admin", async () => {
-    const token = api.issueToken("admin-1", "ADMIN");
+  async function createAvailablePartnerProfile(userId: string): Promise<string> {
+    const id = await createPartnerProfile(userId);
 
-    const res = await request(api.baseUrl, `${DELIVERIES_BASE}`, {
+    const availability = await request(api.baseUrl, "/delivery-partners/me/availability", {
+      method: "PUT",
+      token: api.issueToken(userId),
+      body: { isAvailable: true },
+    });
+    assert.equal(availability.status, 200);
+
+    return id;
+  }
+
+  async function createDeliveryAsAdmin(orderId: string): Promise<string> {
+    const created = await request(api.baseUrl, DELIVERIES_BASE, {
       method: "POST",
-      token,
+      token: api.issueToken("admin-1", "ADMIN"),
+      body: { orderId },
+    });
+    assert.equal(created.status, 201);
+    return String(data(created).id);
+  }
+
+  it("creates a pending delivery for a new order as admin", async () => {
+    const res = await request(api.baseUrl, DELIVERIES_BASE, {
+      method: "POST",
+      token: api.issueToken("admin-1", "ADMIN"),
       body: { orderId: "order-1" },
     });
 
@@ -47,11 +70,9 @@ describe("delivery assignment API", () => {
   });
 
   it("rejects a duplicate delivery for the same order", async () => {
-    const token = api.issueToken("admin-1", "ADMIN");
-
-    const res = await request(api.baseUrl, `${DELIVERIES_BASE}`, {
+    const res = await request(api.baseUrl, DELIVERIES_BASE, {
       method: "POST",
-      token,
+      token: api.issueToken("admin-1", "ADMIN"),
       body: { orderId: "order-1" },
     });
 
@@ -60,11 +81,9 @@ describe("delivery assignment API", () => {
   });
 
   it("never trusts a client-supplied partner identity", async () => {
-    const token = api.issueToken("admin-1", "ADMIN");
-
-    const res = await request(api.baseUrl, `${DELIVERIES_BASE}`, {
+    const res = await request(api.baseUrl, DELIVERIES_BASE, {
       method: "POST",
-      token,
+      token: api.issueToken("admin-1", "ADMIN"),
       body: { orderId: "order-2", partnerId: "attacker-picked-partner" },
     });
 
@@ -75,18 +94,11 @@ describe("delivery assignment API", () => {
   });
 
   it("returns the delivery by id", async () => {
-    const adminToken = api.issueToken("admin-1", "ADMIN");
-    const created = await request(api.baseUrl, `${DELIVERIES_BASE}`, {
-      method: "POST",
-      token: adminToken,
-      body: { orderId: "order-3" },
-    });
-
-    const id = String(data(created).id);
+    const id = await createDeliveryAsAdmin("order-3");
 
     const res = await request(api.baseUrl, `${DELIVERIES_BASE}/${id}`, {
       method: "GET",
-      token: adminToken,
+      token: api.issueToken("admin-1", "ADMIN"),
     });
 
     assert.equal(res.status, 200);
@@ -95,11 +107,9 @@ describe("delivery assignment API", () => {
   });
 
   it("returns the delivery by order id", async () => {
-    const token = api.issueToken("admin-1", "ADMIN");
-
     const res = await request(api.baseUrl, `${DELIVERIES_BASE}/order/order-1`, {
       method: "GET",
-      token,
+      token: api.issueToken("admin-1", "ADMIN"),
     });
 
     assert.equal(res.status, 200);
@@ -125,14 +135,14 @@ describe("delivery assignment API", () => {
   it("returns 400 for invalid create payloads", async () => {
     const token = api.issueToken("admin-1", "ADMIN");
 
-    const empty = await request(api.baseUrl, `${DELIVERIES_BASE}`, {
+    const empty = await request(api.baseUrl, DELIVERIES_BASE, {
       method: "POST",
       token,
       body: { orderId: "" },
     });
     assert.equal(empty.status, 400);
 
-    const missing = await request(api.baseUrl, `${DELIVERIES_BASE}`, {
+    const missing = await request(api.baseUrl, DELIVERIES_BASE, {
       method: "POST",
       token,
       body: {},
@@ -140,21 +150,13 @@ describe("delivery assignment API", () => {
     assert.equal(missing.status, 400);
   });
 
-  it("lets a partner accept an available delivery", async () => {
-    const partnerId = await createPartnerProfile("partner-accept");
-    const adminToken = api.issueToken("admin-1", "ADMIN");
-    const partnerToken = api.issueToken("partner-accept");
-
-    const created = await request(api.baseUrl, `${DELIVERIES_BASE}`, {
-      method: "POST",
-      token: adminToken,
-      body: { orderId: "order-accept" },
-    });
-    const id = String(data(created).id);
+  it("lets an available partner accept an available delivery", async () => {
+    const partnerId = await createAvailablePartnerProfile("partner-accept");
+    const id = await createDeliveryAsAdmin("order-accept");
 
     const res = await request(api.baseUrl, `${DELIVERIES_BASE}/me/accept/${id}`, {
       method: "PUT",
-      token: partnerToken,
+      token: api.issueToken("partner-accept"),
     });
 
     assert.equal(res.status, 200);
@@ -163,46 +165,48 @@ describe("delivery assignment API", () => {
   });
 
   it("is idempotent when the same partner accepts again", async () => {
-    const partnerToken = api.issueToken("partner-accept");
-
-    const delivery = api.deliveryHandle
+    const id = api.deliveryHandle
       .getDeliveries()
-      .find((d) => d.orderId === "order-accept");
+      .find((d) => d.orderId === "order-accept")!.id;
 
-    const res = await request(api.baseUrl, `${DELIVERIES_BASE}/me/accept/${delivery!.id}`, {
+    const res = await request(api.baseUrl, `${DELIVERIES_BASE}/me/accept/${id}`, {
       method: "PUT",
-      token: partnerToken,
+      token: api.issueToken("partner-accept"),
     });
 
     assert.equal(res.status, 200);
     assert.equal(data(res).status, "assigned");
   });
 
-  it("rejects an unrelated partner from accepting another partner's assignment", async () => {
-    const enemyPartnerId = await createPartnerProfile("partner-rival");
-    const rivalToken = api.issueToken("partner-rival");
+  it("rejects an unavailable partner from accepting", async () => {
+    await createPartnerProfile("partner-offline");
+    const id = await createDeliveryAsAdmin("order-offline");
 
-    const delivery = api.deliveryHandle
-      .getDeliveries()
-      .find((d) => d.orderId === "order-accept");
-
-    const res = await request(api.baseUrl, `${DELIVERIES_BASE}/me/accept/${delivery!.id}`, {
+    const res = await request(api.baseUrl, `${DELIVERIES_BASE}/me/accept/${id}`, {
       method: "PUT",
-      token: rivalToken,
+      token: api.issueToken("partner-offline"),
     });
 
     assert.equal(res.status, 409);
-    assert.notEqual(delivery!.partnerId, enemyPartnerId);
+    assert.equal((res.body as { success: boolean }).success, false);
+  });
+
+  it("rejects an unrelated partner from accepting another partner's assignment", async () => {
+    const enemyPartnerId = await createAvailablePartnerProfile("partner-rival");
+
+    const id = api.deliveryHandle.getDeliveries().find((d) => d.orderId === "order-accept")!.id;
+
+    const res = await request(api.baseUrl, `${DELIVERIES_BASE}/me/accept/${id}`, {
+      method: "PUT",
+      token: api.issueToken("partner-rival"),
+    });
+
+    assert.equal(res.status, 409);
+    assert.notEqual(api.deliveryHandle.getDeliveries().find((d) => d.id === id)!.partnerId, enemyPartnerId);
   });
 
   it("rejects accept when the partner has no profile", async () => {
-    const adminToken = api.issueToken("admin-1", "ADMIN");
-    const created = await request(api.baseUrl, `${DELIVERIES_BASE}`, {
-      method: "POST",
-      token: adminToken,
-      body: { orderId: "order-noprofile" },
-    });
-    const id = String(data(created).id);
+    const id = await createDeliveryAsAdmin("order-noprofile");
 
     const res = await request(api.baseUrl, `${DELIVERIES_BASE}/me/accept/${id}`, {
       method: "PUT",
@@ -223,22 +227,11 @@ describe("delivery assignment API", () => {
   });
 
   it("lists only the authenticated partner's deliveries", async () => {
-    await createPartnerProfile("partner-a");
-    await createPartnerProfile("partner-b");
-    const adminToken = api.issueToken("admin-1", "ADMIN");
+    const aId = await createDeliveryAsAdmin("order-for-a");
+    const bId = await createDeliveryAsAdmin("order-for-b");
 
-    const forA = await request(api.baseUrl, `${DELIVERIES_BASE}`, {
-      method: "POST",
-      token: adminToken,
-      body: { orderId: "order-for-a" },
-    });
-    const forB = await request(api.baseUrl, `${DELIVERIES_BASE}`, {
-      method: "POST",
-      token: adminToken,
-      body: { orderId: "order-for-b" },
-    });
-    const aId = String(data(forA).id);
-    const bId = String(data(forB).id);
+    await createAvailablePartnerProfile("partner-a");
+    await createAvailablePartnerProfile("partner-b");
 
     await request(api.baseUrl, `${DELIVERIES_BASE}/me/accept/${aId}`, {
       method: "PUT",
@@ -269,10 +262,54 @@ describe("delivery assignment API", () => {
     );
   });
 
+  it("lets a partner view a pending delivery from the available pool", async () => {
+    const partnerId = await createAvailablePartnerProfile("partner-viewer");
+    const id = await createDeliveryAsAdmin("order-view-pending");
+
+    const res = await request(api.baseUrl, `${DELIVERIES_BASE}/${id}`, {
+      method: "GET",
+      token: api.issueToken("partner-viewer"),
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(data(res).status, "pending");
+    assert.equal(data(res).partnerId, null);
+    assert.notEqual(partnerId, null);
+  });
+
+  it("forbids a partner from viewing another partner's assigned delivery", async () => {
+    await createAvailablePartnerProfile("partner-viewer-2");
+    await createAvailablePartnerProfile("partner-owner");
+    const id = await createDeliveryAsAdmin("order-view-owned");
+
+    const accepted = await request(api.baseUrl, `${DELIVERIES_BASE}/me/accept/${id}`, {
+      method: "PUT",
+      token: api.issueToken("partner-owner"),
+    });
+    assert.equal(accepted.status, 200);
+
+    const res = await request(api.baseUrl, `${DELIVERIES_BASE}/${id}`, {
+      method: "GET",
+      token: api.issueToken("partner-viewer-2"),
+    });
+
+    assert.equal(res.status, 403);
+    assert.equal((res.body as { success: boolean }).success, false);
+  });
+
   it("rejects unauthenticated requests", async () => {
-    const res = await request(api.baseUrl, `${DELIVERIES_BASE}`, {
+    const res = await request(api.baseUrl, DELIVERIES_BASE, {
       method: "POST",
       body: { orderId: "order-x" },
+    });
+
+    assert.equal(res.status, 401);
+  });
+
+  it("rejects malformed tokens", async () => {
+    const res = await request(api.baseUrl, `${DELIVERIES_BASE}/me`, {
+      method: "GET",
+      token: "not-a-jwt",
     });
 
     assert.equal(res.status, 401);
@@ -281,22 +318,22 @@ describe("delivery assignment API", () => {
   it("rejects wrong-role access", async () => {
     const customerToken = api.issueToken("customer-1", "CUSTOMER");
 
-    const createAsCustomer = await request(api.baseUrl, `${DELIVERIES_BASE}`, {
+    const createAsCustomer = await request(api.baseUrl, DELIVERIES_BASE, {
       method: "POST",
       token: customerToken,
       body: { orderId: "order-y" },
     });
     assert.equal(createAsCustomer.status, 403);
 
-    const acceptAsCustomer = await request(api.baseUrl, `${DELIVERIES_BASE}/me`, {
+    const listAsCustomer = await request(api.baseUrl, `${DELIVERIES_BASE}/me`, {
       method: "GET",
       token: customerToken,
     });
-    assert.equal(acceptAsCustomer.status, 403);
+    assert.equal(listAsCustomer.status, 403);
   });
 
   it("rejects a partner from creating deliveries (admin only)", async () => {
-    const res = await request(api.baseUrl, `${DELIVERIES_BASE}`, {
+    const res = await request(api.baseUrl, DELIVERIES_BASE, {
       method: "POST",
       token: api.issueToken("partner-accept"),
       body: { orderId: "order-z" },

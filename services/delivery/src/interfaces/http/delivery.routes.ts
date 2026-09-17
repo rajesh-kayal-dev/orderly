@@ -3,17 +3,24 @@ import { acceptDelivery } from "../../application/delivery/accept-delivery.js";
 import { createDelivery } from "../../application/delivery/create-delivery.js";
 import { getDelivery } from "../../application/delivery/get-delivery.js";
 import { getDeliveryByOrder } from "../../application/delivery/get-delivery-by-order.js";
+import { getMyAccessibleDelivery } from "../../application/delivery/get-my-accessible-delivery.js";
 import { listMyDeliveries } from "../../application/delivery/list-my-deliveries.js";
+import {
+  completeDelivery,
+  failDelivery,
+  pickupDelivery,
+  startTransitDelivery,
+} from "../../application/delivery/transition-delivery.js";
 import type { DeliveryPartnerRepository } from "../../domain/delivery-partner/delivery-partner.repository.js";
 import type { DeliveryRepository } from "../../domain/delivery/delivery.repository.js";
 import type { TokenVerifier } from "../../infrastructure/security/token.js";
-import { mapErrorToResponse } from "./error-handler.js";
-import { requireAuth, requireRole, type AuthenticatedRequest } from "./middleware/auth.middleware.js";
 import {
   createDeliverySchema,
   deliveryIdParamsSchema,
   deliveryOrderParamsSchema,
 } from "./delivery.schemas.js";
+import { mapErrorToResponse } from "./error-handler.js";
+import { requireAuth, requireRole, type AuthenticatedRequest } from "./middleware/auth.middleware.js";
 
 export interface DeliveryRouterDeps {
   deliveryRepository: DeliveryRepository;
@@ -30,12 +37,23 @@ export const createDeliveryRouter = ({
 
   const createDeliveryUseCase = createDelivery(deliveryRepository);
   const getDeliveryUseCase = getDelivery(deliveryRepository);
+  const getMyAccessibleDeliveryUseCase = getMyAccessibleDelivery(
+    deliveryRepository,
+    deliveryPartnerRepository,
+  );
   const getDeliveryByOrderUseCase = getDeliveryByOrder(deliveryRepository);
   const listMyDeliveriesUseCase = listMyDeliveries(
     deliveryRepository,
     deliveryPartnerRepository,
   );
   const acceptDeliveryUseCase = acceptDelivery(deliveryRepository, deliveryPartnerRepository);
+  const pickupDeliveryUseCase = pickupDelivery(deliveryRepository, deliveryPartnerRepository);
+  const startTransitDeliveryUseCase = startTransitDelivery(
+    deliveryRepository,
+    deliveryPartnerRepository,
+  );
+  const completeDeliveryUseCase = completeDelivery(deliveryRepository, deliveryPartnerRepository);
+  const failDeliveryUseCase = failDelivery(deliveryRepository, deliveryPartnerRepository);
 
   const requireAuthMiddleware = requireAuth({ verifyAccessToken: tokenVerifier.verify });
   const requireAdminMiddleware = requireRole("ADMIN");
@@ -56,6 +74,54 @@ export const createDeliveryRouter = ({
     try {
       const { id } = deliveryIdParamsSchema.parse(req.params);
       const delivery = await acceptDeliveryUseCase((req as AuthenticatedRequest).userId, id);
+      return void res.status(200).json({ success: true, data: delivery });
+    } catch (error) {
+      return void mapErrorToResponse(res, error);
+    }
+  });
+
+  router.put("/me/pickup/:id", requireAuthMiddleware, requirePartnerMiddleware, async (req, res) => {
+    try {
+      const { id } = deliveryIdParamsSchema.parse(req.params);
+      const delivery = await pickupDeliveryUseCase((req as AuthenticatedRequest).userId, id);
+      return void res.status(200).json({ success: true, data: delivery });
+    } catch (error) {
+      return void mapErrorToResponse(res, error);
+    }
+  });
+
+  router.put(
+    "/me/start-transit/:id",
+    requireAuthMiddleware,
+    requirePartnerMiddleware,
+    async (req, res) => {
+      try {
+        const { id } = deliveryIdParamsSchema.parse(req.params);
+        const delivery = await startTransitDeliveryUseCase(
+          (req as AuthenticatedRequest).userId,
+          id,
+        );
+        return void res.status(200).json({ success: true, data: delivery });
+      } catch (error) {
+        return void mapErrorToResponse(res, error);
+      }
+    },
+  );
+
+  router.put("/me/complete/:id", requireAuthMiddleware, requirePartnerMiddleware, async (req, res) => {
+    try {
+      const { id } = deliveryIdParamsSchema.parse(req.params);
+      const delivery = await completeDeliveryUseCase((req as AuthenticatedRequest).userId, id);
+      return void res.status(200).json({ success: true, data: delivery });
+    } catch (error) {
+      return void mapErrorToResponse(res, error);
+    }
+  });
+
+  router.put("/me/fail/:id", requireAuthMiddleware, requirePartnerMiddleware, async (req, res) => {
+    try {
+      const { id } = deliveryIdParamsSchema.parse(req.params);
+      const delivery = await failDeliveryUseCase((req as AuthenticatedRequest).userId, id);
       return void res.status(200).json({ success: true, data: delivery });
     } catch (error) {
       return void mapErrorToResponse(res, error);
@@ -93,7 +159,11 @@ export const createDeliveryRouter = ({
     async (req, res) => {
       try {
         const { id } = deliveryIdParamsSchema.parse(req.params);
-        const delivery = await getDeliveryUseCase(id);
+        const { userId, userRole } = req as AuthenticatedRequest;
+        const delivery =
+          userRole === "ADMIN"
+            ? await getDeliveryUseCase(id)
+            : await getMyAccessibleDeliveryUseCase(userId, id);
         return void res.status(200).json({ success: true, data: delivery });
       } catch (error) {
         return void mapErrorToResponse(res, error);

@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient } from "../../../generated/prisma/client.js";
 import type {
   CreateDeliveryData,
   DeliveryRepository,
+  DeliveryTransitionTarget,
 } from "../../../domain/delivery/delivery.repository.js";
 import type { Delivery, DeliveryStatus } from "../../../domain/delivery/delivery.types.js";
 
@@ -11,7 +12,9 @@ const safeDeliverySelect = {
   partnerId: true,
   status: true,
   pickupTime: true,
+  inTransitAt: true,
   deliveredAt: true,
+  failedAt: true,
   distanceKm: true,
   createdAt: true,
   updatedAt: true,
@@ -23,7 +26,9 @@ type DeliveryRow = {
   partnerId: string | null;
   status: DeliveryStatus;
   pickupTime: Date | null;
+  inTransitAt: Date | null;
   deliveredAt: Date | null;
+  failedAt: Date | null;
   distanceKm: Prisma.Decimal | null;
   createdAt: Date;
   updatedAt: Date;
@@ -36,11 +41,33 @@ function toDelivery(delivery: DeliveryRow): Delivery {
     partnerId: delivery.partnerId,
     status: delivery.status,
     pickupTime: delivery.pickupTime,
+    inTransitAt: delivery.inTransitAt,
     deliveredAt: delivery.deliveredAt,
+    failedAt: delivery.failedAt,
     distanceKm: delivery.distanceKm,
     createdAt: delivery.createdAt,
     updatedAt: delivery.updatedAt,
   };
+}
+
+function timestampDataFor(target: DeliveryStatus): object {
+  if (target === "picked_up") {
+    return { pickupTime: new Date() };
+  }
+
+  if (target === "in_transit") {
+    return { inTransitAt: new Date() };
+  }
+
+  if (target === "delivered") {
+    return { deliveredAt: new Date() };
+  }
+
+  if (target === "failed") {
+    return { failedAt: new Date() };
+  }
+
+  return {};
 }
 
 export class PrismaDeliveryRepository implements DeliveryRepository {
@@ -95,6 +122,30 @@ export class PrismaDeliveryRepository implements DeliveryRepository {
     const result = await this.db.delivery.updateMany({
       where: { id, status: "pending", partnerId: null },
       data: { status: "assigned", partnerId },
+    });
+
+    if (result.count !== 1) {
+      return null;
+    }
+
+    return this.findById(id);
+  }
+
+  async transition(
+    id: string,
+    partnerId: string,
+    target: DeliveryTransitionTarget,
+  ): Promise<Delivery | null> {
+    const result = await this.db.delivery.updateMany({
+      where: {
+        id,
+        partnerId,
+        status: { in: [...target.fromStatuses] },
+      },
+      data: {
+        status: target.target,
+        ...timestampDataFor(target.target),
+      },
     });
 
     if (result.count !== 1) {

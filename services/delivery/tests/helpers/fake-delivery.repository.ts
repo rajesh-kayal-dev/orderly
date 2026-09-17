@@ -2,6 +2,7 @@ import { Decimal } from "decimal.js";
 import type {
   CreateDeliveryData,
   DeliveryRepository,
+  DeliveryTransitionTarget,
 } from "../../src/domain/delivery/delivery.repository.js";
 import type { Delivery, DeliveryStatus } from "../../src/domain/delivery/delivery.types.js";
 
@@ -18,7 +19,9 @@ export function makeDelivery(
     partnerId: overrides.partnerId ?? null,
     status: overrides.status ?? "pending",
     pickupTime: overrides.pickupTime ?? null,
+    inTransitAt: overrides.inTransitAt ?? null,
     deliveredAt: overrides.deliveredAt ?? null,
+    failedAt: overrides.failedAt ?? null,
     distanceKm: overrides.distanceKm ?? null,
     createdAt: overrides.createdAt ?? now,
     updatedAt: overrides.updatedAt ?? now,
@@ -71,8 +74,42 @@ export function createFakeDeliveryRepository(): FakeDeliveryRepositoryHandle {
       const current = deliveries[idx]!;
       const updated: Delivery = {
         ...current,
-        status: "assigned" as DeliveryStatus,
+        status: "assigned",
         partnerId,
+        updatedAt: new Date(),
+      };
+      deliveries[idx] = updated;
+      return updated;
+    },
+
+    async transition(id: string, partnerId: string, target: DeliveryTransitionTarget) {
+      const idx = deliveries.findIndex(
+        (d) =>
+          d.id === id &&
+          d.partnerId === partnerId &&
+          target.fromStatuses.includes(d.status),
+      );
+
+      if (idx === -1) {
+        return null;
+      }
+
+      const current = deliveries[idx]!;
+      const timestamp =
+        target.target === "picked_up"
+          ? { pickupTime: new Date() }
+          : target.target === "in_transit"
+            ? { inTransitAt: new Date() }
+            : target.target === "delivered"
+              ? { deliveredAt: new Date() }
+              : target.target === "failed"
+                ? { failedAt: new Date() }
+                : {};
+
+      const updated: Delivery = {
+        ...current,
+        ...timestamp,
+        status: target.target as DeliveryStatus,
         updatedAt: new Date(),
       };
       deliveries[idx] = updated;

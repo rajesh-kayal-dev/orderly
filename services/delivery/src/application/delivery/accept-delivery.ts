@@ -1,7 +1,11 @@
 import type { DeliveryPartnerRepository } from "../../domain/delivery-partner/delivery-partner.repository.js";
 import type { DeliveryRepository } from "../../domain/delivery/delivery.repository.js";
 import { DeliveryPartnerProfileNotFoundError } from "../delivery-partner/errors.js";
-import { DeliveryNotFoundError, DeliveryNotAvailableError } from "./errors.js";
+import {
+  DeliveryNotFoundError,
+  DeliveryNotAvailableError,
+  DeliveryPartnerUnavailableError,
+} from "./errors.js";
 
 export const acceptDelivery =
   (deliveries: DeliveryRepository, partners: DeliveryPartnerRepository) =>
@@ -24,6 +28,10 @@ export const acceptDelivery =
 
     if (delivery.status !== "pending" || delivery.partnerId !== null) {
       throw new DeliveryNotAvailableError();
+    }
+
+    if (!profile.isAvailable) {
+      throw new DeliveryPartnerUnavailableError();
     }
 
     const accepted = await deliveries.accept(id, profile.id);
