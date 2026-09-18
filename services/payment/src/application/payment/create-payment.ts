@@ -3,6 +3,7 @@ import type { PaymentRepository } from "../../domain/payment/payment.repository.
 import type { PaymentProvider } from "../../domain/payment/payment.provider.js";
 import type { OrderClient } from "../../domain/order/order.client.js";
 import type { Payment, PaymentMethod } from "../../domain/payment/payment.types.js";
+import type { PaymentEventPublisher } from "./payment-event.publisher.js";
 import {
   PaymentForbiddenError,
   PaymentProviderError,
@@ -21,6 +22,7 @@ export interface CreatePaymentDeps {
   payments: PaymentRepository;
   provider: PaymentProvider | null;
   orderClient: OrderClient | null;
+  eventPublisher?: PaymentEventPublisher | null;
 }
 
 export const createPayment =
@@ -87,7 +89,7 @@ export const createPayment =
       providerReference = intent.providerReference;
     }
 
-    return deps.payments.createPayment({
+    const payment = await deps.payments.createPayment({
       orderId: input.orderId,
       customerId,
       amount: input.amount,
@@ -96,4 +98,10 @@ export const createPayment =
       provider,
       providerReference,
     });
+
+    if (deps.eventPublisher) {
+      await deps.eventPublisher.publishPaymentCreated(payment);
+    }
+
+    return payment;
   };

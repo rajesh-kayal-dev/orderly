@@ -4,6 +4,7 @@ import { createPayment } from "../../application/payment/create-payment.js";
 import { getPayment } from "../../application/payment/get-payment.js";
 import { getPaymentByOrder } from "../../application/payment/get-payment-by-order.js";
 import { verifyPayment } from "../../application/payment/verify-payment.js";
+import type { PaymentEventPublisher } from "../../application/payment/payment-event.publisher.js";
 import type { OrderClient } from "../../domain/order/order.client.js";
 import type { PaymentProvider } from "../../domain/payment/payment.provider.js";
 import type { PaymentRepository } from "../../domain/payment/payment.repository.js";
@@ -22,6 +23,7 @@ export interface PaymentRouterDeps {
   paymentProvider: PaymentProvider | null;
   orderClient: OrderClient | null;
   tokenVerifier: TokenVerifier;
+  eventPublisher?: PaymentEventPublisher | null;
 }
 
 export const createPaymentRouter = ({
@@ -29,6 +31,7 @@ export const createPaymentRouter = ({
   paymentProvider,
   orderClient,
   tokenVerifier,
+  eventPublisher,
 }: PaymentRouterDeps): ExpressRouter => {
   const router: ExpressRouter = Router();
 
@@ -36,6 +39,7 @@ export const createPaymentRouter = ({
     payments: paymentRepository,
     provider: paymentProvider,
     orderClient,
+    eventPublisher,
   });
   const getPaymentUseCase = getPayment(paymentRepository);
   const getPaymentByOrderUseCase = getPaymentByOrder(paymentRepository);
@@ -43,6 +47,7 @@ export const createPaymentRouter = ({
     payments: paymentRepository,
     provider: paymentProvider,
     orderClient,
+    eventPublisher,
   });
   const requireAuthMiddleware = requireAuth({ verifyAccessToken: tokenVerifier.verify });
 

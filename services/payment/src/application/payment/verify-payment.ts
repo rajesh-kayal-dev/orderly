@@ -2,6 +2,7 @@ import type { PaymentRepository } from "../../domain/payment/payment.repository.
 import type { PaymentProvider } from "../../domain/payment/payment.provider.js";
 import type { OrderClient } from "../../domain/order/order.client.js";
 import type { Payment } from "../../domain/payment/payment.types.js";
+import type { PaymentEventPublisher } from "./payment-event.publisher.js";
 import {
   PaymentForbiddenError,
   PaymentNotFoundError,
@@ -21,6 +22,7 @@ export interface VerifyPaymentDeps {
   payments: PaymentRepository;
   provider: PaymentProvider | null;
   orderClient: OrderClient | null;
+  eventPublisher?: PaymentEventPublisher | null;
 }
 
 export const verifyPayment =
@@ -85,12 +87,16 @@ export const verifyPayment =
       });
 
       if (!result.valid) {
-        await deps.payments.updatePaymentStatus(payment.id, {
+        const failedPayment = await deps.payments.updatePaymentStatus(payment.id, {
           status: "failed",
           providerPaymentId: input.providerPaymentId,
           failureReason: "Provider signature verification failed",
           paidAt: null,
         });
+
+        if (deps.eventPublisher && failedPayment) {
+          await deps.eventPublisher.publishPaymentFailed(failedPayment);
+        }
 
         throw new PaymentVerificationError("Payment verification failed");
       }
@@ -110,6 +116,10 @@ export const verifyPayment =
       failureReason: null,
       paidAt: new Date(),
     });
+
+    if (deps.eventPublisher && updated) {
+      await deps.eventPublisher.publishPaymentSucceeded(updated);
+    }
 
     return updated!;
   };
