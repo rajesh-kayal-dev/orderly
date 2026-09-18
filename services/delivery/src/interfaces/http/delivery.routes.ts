@@ -11,6 +11,7 @@ import {
   pickupDelivery,
   startTransitDelivery,
 } from "../../application/delivery/transition-delivery.js";
+import type { DeliveryEventPublisher } from "../../application/delivery/delivery-event.publisher.js";
 import type { DeliveryPartnerRepository } from "../../domain/delivery-partner/delivery-partner.repository.js";
 import type { DeliveryRepository } from "../../domain/delivery/delivery.repository.js";
 import type { TokenVerifier } from "../../infrastructure/security/token.js";
@@ -26,16 +27,18 @@ export interface DeliveryRouterDeps {
   deliveryRepository: DeliveryRepository;
   deliveryPartnerRepository: DeliveryPartnerRepository;
   tokenVerifier: TokenVerifier;
+  eventPublisher?: DeliveryEventPublisher | null;
 }
 
 export const createDeliveryRouter = ({
   deliveryRepository,
   deliveryPartnerRepository,
   tokenVerifier,
+  eventPublisher,
 }: DeliveryRouterDeps): ExpressRouter => {
   const router: ExpressRouter = Router();
 
-  const createDeliveryUseCase = createDelivery(deliveryRepository);
+  const createDeliveryUseCase = createDelivery(deliveryRepository, eventPublisher);
   const getDeliveryUseCase = getDelivery(deliveryRepository);
   const getMyAccessibleDeliveryUseCase = getMyAccessibleDelivery(
     deliveryRepository,
@@ -46,14 +49,31 @@ export const createDeliveryRouter = ({
     deliveryRepository,
     deliveryPartnerRepository,
   );
-  const acceptDeliveryUseCase = acceptDelivery(deliveryRepository, deliveryPartnerRepository);
-  const pickupDeliveryUseCase = pickupDelivery(deliveryRepository, deliveryPartnerRepository);
+  const acceptDeliveryUseCase = acceptDelivery(
+    deliveryRepository,
+    deliveryPartnerRepository,
+    eventPublisher,
+  );
+  const pickupDeliveryUseCase = pickupDelivery(
+    deliveryRepository,
+    deliveryPartnerRepository,
+    eventPublisher,
+  );
   const startTransitDeliveryUseCase = startTransitDelivery(
     deliveryRepository,
     deliveryPartnerRepository,
+    eventPublisher,
   );
-  const completeDeliveryUseCase = completeDelivery(deliveryRepository, deliveryPartnerRepository);
-  const failDeliveryUseCase = failDelivery(deliveryRepository, deliveryPartnerRepository);
+  const completeDeliveryUseCase = completeDelivery(
+    deliveryRepository,
+    deliveryPartnerRepository,
+    eventPublisher,
+  );
+  const failDeliveryUseCase = failDelivery(
+    deliveryRepository,
+    deliveryPartnerRepository,
+    eventPublisher,
+  );
 
   const requireAuthMiddleware = requireAuth({ verifyAccessToken: tokenVerifier.verify });
   const requireAdminMiddleware = requireRole("ADMIN");

@@ -24,6 +24,7 @@ export const EventTypes = {
   PaymentCancelled: "payment.cancelled",
   PaymentRefunded: "payment.refunded",
 
+  DeliveryCreated: "delivery.created",
   DeliveryAssigned: "delivery.assigned",
   DeliveryPickedUp: "delivery.picked_up",
   DeliveryInTransit: "delivery.in_transit",
@@ -53,6 +54,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   EventTypes.PaymentCancelled,
   EventTypes.PaymentRefunded,
 
+  EventTypes.DeliveryCreated,
   EventTypes.DeliveryAssigned,
   EventTypes.DeliveryPickedUp,
   EventTypes.DeliveryInTransit,

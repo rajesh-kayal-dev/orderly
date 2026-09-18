@@ -91,6 +91,12 @@ export interface PaymentRefundedPayload {
   refundAmount: string;
 }
 
+export interface DeliveryCreatedPayload {
+  deliveryId: string;
+  orderId: string;
+  createdAt: string;
+}
+
 export interface DeliveryAssignedPayload {
   deliveryId: string;
   orderId: string;
@@ -153,6 +159,7 @@ export interface EventPayloadMap {
   [EventTypes.PaymentCancelled]: PaymentCancelledPayload;
   [EventTypes.PaymentRefunded]: PaymentRefundedPayload;
 
+  [EventTypes.DeliveryCreated]: DeliveryCreatedPayload;
   [EventTypes.DeliveryAssigned]: DeliveryAssignedPayload;
   [EventTypes.DeliveryPickedUp]: DeliveryPickedUpPayload;
   [EventTypes.DeliveryInTransit]: DeliveryInTransitPayload;
