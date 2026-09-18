@@ -22,6 +22,7 @@ export interface ListNotificationsOptions {
 export interface NotificationRepository {
   create(data: CreateNotificationData): Promise<Notification>;
   findById(id: string): Promise<Notification | null>;
+  findByMetadataEventId?(eventId: string): Promise<Notification | null>;
   listByUserId(userId: string, options?: ListNotificationsOptions): Promise<Notification[]>;
   markRead(id: string, userId: string): Promise<Notification | null>;
   markAllRead(userId: string): Promise<number>;
