@@ -3,6 +3,7 @@ import type { CartRepository } from "../../domain/order/cart.repository.js";
 import type { OrderRepository } from "../../domain/order/order.repository.js";
 import type { Order } from "../../domain/order/order.types.js";
 import type { MenuCatalogClient } from "../../domain/menu-catalog/menu-catalog.client.js";
+import type { OrderEventPublisher } from "./order-event.publisher.js";
 import {
   CartEmptyError,
   MenuItemNotFoundError,
@@ -19,7 +20,7 @@ export interface CreateOrderInput {
 }
 
 export const createOrder =
-  (carts: CartRepository, orders: OrderRepository, catalog: MenuCatalogClient) =>
+  (carts: CartRepository, orders: OrderRepository, catalog: MenuCatalogClient, eventPublisher: OrderEventPublisher) =>
   async (customerId: string, input: CreateOrderInput): Promise<Order> => {
     const cart = await carts.findCartByCustomer(customerId);
 
@@ -86,6 +87,8 @@ export const createOrder =
       totalAmount,
       items: orderItems,
     });
+
+    await eventPublisher.publishOrderPlaced(order);
 
     await carts.clearCartItems(cart.id);
     await carts.updateCartRestaurant(cart.id, null);

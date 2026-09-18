@@ -3,6 +3,7 @@ import { createOrder } from "../../application/order/create-order.js";
 import { getOrder } from "../../application/order/get-order.js";
 import { listCustomerOrders } from "../../application/order/list-customer-orders.js";
 import { cancelOrder } from "../../application/order/cancel-order.js";
+import type { OrderEventPublisher } from "../../application/order/order-event.publisher.js";
 import type { CartRepository } from "../../domain/order/cart.repository.js";
 import type { OrderRepository } from "../../domain/order/order.repository.js";
 import type { MenuCatalogClient } from "../../domain/menu-catalog/menu-catalog.client.js";
@@ -19,6 +20,7 @@ export interface OrderRouterDeps {
   cartRepository: CartRepository;
   orderRepository: OrderRepository;
   menuCatalogClient: MenuCatalogClient;
+  eventPublisher: OrderEventPublisher;
   tokenVerifier: TokenVerifier;
 }
 
@@ -26,14 +28,15 @@ export const createOrderRouter = ({
   cartRepository,
   orderRepository,
   menuCatalogClient,
+  eventPublisher,
   tokenVerifier,
 }: OrderRouterDeps): ExpressRouter => {
   const router: ExpressRouter = Router();
 
-  const createOrderUseCase = createOrder(cartRepository, orderRepository, menuCatalogClient);
+  const createOrderUseCase = createOrder(cartRepository, orderRepository, menuCatalogClient, eventPublisher);
   const getOrderUseCase = getOrder(orderRepository);
   const listCustomerOrdersUseCase = listCustomerOrders(orderRepository);
-  const cancelOrderUseCase = cancelOrder(orderRepository);
+  const cancelOrderUseCase = cancelOrder(orderRepository, eventPublisher);
   const requireAuthMiddleware = requireAuth({ verifyAccessToken: tokenVerifier.verify });
 
   router.post("/", requireAuthMiddleware, async (req, res) => {

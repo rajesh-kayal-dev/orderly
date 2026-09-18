@@ -8,16 +8,18 @@ import {
   OrderStatusTransitionError,
   RestaurantOwnershipError,
 } from "./errors.js";
+import type { OrderEventPublisher } from "./order-event.publisher.js";
 
 export interface UpdateRestaurantOrderStatusDeps {
   restaurantOwnershipClient: RestaurantOwnershipClient;
   orderRepository: OrderRepository;
+  eventPublisher: OrderEventPublisher;
 }
 
 const makeRestaurantStatusUpdater =
   (deps: UpdateRestaurantOrderStatusDeps, target: OrderStatus, cancelPayment: boolean) =>
   async (ownerId: string, accessToken: string, orderId: string): Promise<Order> => {
-    const { restaurantOwnershipClient, orderRepository } = deps;
+    const { restaurantOwnershipClient, orderRepository, eventPublisher } = deps;
 
     const restaurant = await restaurantOwnershipClient.getRestaurantByOwner(ownerId, accessToken);
 
@@ -41,12 +43,18 @@ const makeRestaurantStatusUpdater =
 
     const updated = await orderRepository.updateOrderStatus(orderId, target);
 
-    if (updated && cancelPayment) {
+    if (!updated) {
+      throw new OrderNotFoundError();
+    }
+
+    if (cancelPayment) {
       await orderRepository.updateOrderPaymentStatus(orderId, "cancelled");
     }
 
     const refreshed = await orderRepository.findOrderById(orderId);
-    return refreshed ?? updated!;
+    const result = refreshed ?? updated;
+    await eventPublisher.publishOrderStatusChanged(result, order.status);
+    return result;
   };
 
 export const acceptOrder = (deps: UpdateRestaurantOrderStatusDeps) =>
