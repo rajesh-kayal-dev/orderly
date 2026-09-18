@@ -2,9 +2,10 @@ import type { OrderRepository } from "../../domain/order/order.repository.js";
 import type { Order } from "../../domain/order/order.types.js";
 import { isCancellableStatus } from "../../domain/order/order.types.js";
 import { OrderForbiddenError, OrderNotFoundError, OrderStateConflictError } from "./errors.js";
+import type { OrderEventPublisher } from "./order-event.publisher.js";
 
 export const cancelOrder =
-  (orders: OrderRepository) =>
+  (orders: OrderRepository, eventPublisher: OrderEventPublisher) =>
   async (customerId: string, orderId: string): Promise<Order> => {
     const order = await orders.findOrderById(orderId);
 
@@ -22,9 +23,14 @@ export const cancelOrder =
 
     const updated = await orders.updateOrderStatus(orderId, "cancelled");
 
-    if (updated) {
-      await orders.updateOrderPaymentStatus(orderId, "cancelled");
+    if (!updated) {
+      throw new OrderNotFoundError();
     }
 
-    return orders.findOrderById(orderId).then((o) => o!);
+    await orders.updateOrderPaymentStatus(orderId, "cancelled");
+
+    const refreshed = await orders.findOrderById(orderId);
+    const result = refreshed ?? updated;
+    await eventPublisher.publishOrderStatusChanged(result, order.status);
+    return result;
   };

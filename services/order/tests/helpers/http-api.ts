@@ -7,6 +7,7 @@ import { createCartRouter } from "../../src/interfaces/http/cart.routes.js";
 import { createOrderRouter } from "../../src/interfaces/http/order.routes.js";
 import { createRestaurantOrderRouter } from "../../src/interfaces/http/restaurant-order.routes.js";
 import { createTokenVerifier } from "../../src/infrastructure/security/token.js";
+import type { OrderEventPublisher } from "../../src/application/order/order-event.publisher.js";
 import { createFakeRepositories, type FakeRepositoryHandle } from "./fake-repositories.js";
 
 function toPem(
@@ -34,6 +35,10 @@ export async function createHttpTestApi(): Promise<HttpTestApi> {
   const handle = createFakeRepositories();
   const keyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
   const tokenVerifier = createTokenVerifier(toPem(keyPair, "public"));
+  const eventPublisher: OrderEventPublisher = {
+    async publishOrderPlaced() {},
+    async publishOrderStatusChanged() {},
+  };
 
   const app: Express = express();
   app.use(express.json());
@@ -51,6 +56,7 @@ export async function createHttpTestApi(): Promise<HttpTestApi> {
       cartRepository: handle.cartRepo,
       orderRepository: handle.orderRepo,
       menuCatalogClient: handle.catalogClient,
+      eventPublisher,
       tokenVerifier,
     }),
   );
@@ -59,6 +65,7 @@ export async function createHttpTestApi(): Promise<HttpTestApi> {
     createRestaurantOrderRouter({
       orderRepository: handle.orderRepo,
       restaurantOwnershipClient: handle.restaurantOwnershipClient,
+      eventPublisher,
       tokenVerifier,
     }),
   );

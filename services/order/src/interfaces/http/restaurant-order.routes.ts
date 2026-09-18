@@ -29,11 +29,12 @@ const getAccessToken = (req: AuthenticatedRequest): string => {
 export const createRestaurantOrderRouter = ({
   orderRepository,
   restaurantOwnershipClient,
+  eventPublisher,
   tokenVerifier,
 }: RestaurantOrderRouterDeps): ExpressRouter => {
   const router: ExpressRouter = Router();
 
-  const deps: UpdateRestaurantOrderStatusDeps = { restaurantOwnershipClient, orderRepository };
+  const deps: UpdateRestaurantOrderStatusDeps = { restaurantOwnershipClient, orderRepository, eventPublisher };
   const getOrderUseCase = getRestaurantOrder(restaurantOwnershipClient, orderRepository);
   const listOrdersUseCase = listRestaurantOrders(restaurantOwnershipClient, orderRepository);
   const acceptOrderUseCase = acceptOrder(deps);
