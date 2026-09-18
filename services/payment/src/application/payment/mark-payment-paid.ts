@@ -1,6 +1,7 @@
 import type { PaymentRepository } from "../../domain/payment/payment.repository.js";
 import type { Payment } from "../../domain/payment/payment.types.js";
 import { canTransitionPaymentStatus } from "../../domain/payment/payment.types.js";
+import type { PaymentEventPublisher } from "./payment-event.publisher.js";
 import { PaymentNotFoundError, PaymentStateConflictError } from "./errors.js";
 
 export interface MarkPaymentPaidInput {
@@ -8,7 +9,7 @@ export interface MarkPaymentPaidInput {
 }
 
 export const markPaymentPaid =
-  (payments: PaymentRepository) =>
+  (payments: PaymentRepository, eventPublisher?: PaymentEventPublisher | null) =>
   async (paymentId: string, input: MarkPaymentPaidInput = {}): Promise<Payment> => {
     const payment = await payments.findPaymentById(paymentId);
 
@@ -32,6 +33,10 @@ export const markPaymentPaid =
       failureReason: null,
       paidAt: new Date(),
     });
+
+    if (eventPublisher && updated) {
+      await eventPublisher.publishPaymentSucceeded(updated);
+    }
 
     return updated!;
   };
