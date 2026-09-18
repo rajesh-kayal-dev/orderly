@@ -63,6 +63,10 @@ export function createFakeNotificationRepository(): FakeNotificationRepositoryHa
       return notifications.find((n) => n.id === id) ?? null;
     },
 
+    async findByMetadataEventId(eventId: string) {
+      return notifications.find((n) => n.metadata && n.metadata.eventId === eventId) ?? null;
+    },
+
     async listByUserId(userId, options: ListNotificationsOptions | undefined) {
       return notifications
         .filter((n) => n.userId === userId)

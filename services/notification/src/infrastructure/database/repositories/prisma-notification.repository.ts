@@ -95,6 +95,21 @@ export class PrismaNotificationRepository implements NotificationRepository {
     return notification ? toNotification(notification) : null;
   }
 
+  async findByMetadataEventId(eventId: string): Promise<Notification | null> {
+    const notifications = await this.db.notification.findMany({
+      where: {
+        metadata: {
+          path: ["eventId"],
+          equals: eventId,
+        },
+      },
+      take: 1,
+      select: safeNotificationSelect,
+    });
+
+    return notifications[0] ? toNotification(notifications[0]) : null;
+  }
+
   async listByUserId(
     userId: string,
     options?: ListNotificationsOptions,

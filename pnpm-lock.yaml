@@ -220,6 +220,12 @@ importers:
 
   services/notification:
     dependencies:
+      '@orderly/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@orderly/events':
+        specifier: workspace:*
+        version: link:../../packages/events
       '@prisma/adapter-pg':
         specifier: ^7.10.0
         version: 7.10.0
