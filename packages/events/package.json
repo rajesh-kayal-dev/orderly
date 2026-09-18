@@ -1,0 +1,21 @@
+{
+  "name": "@orderly/events",
+  "version": "1.0.0",
+  "main": "./dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsc --watch",
+    "build": "tsc",
+    "test": "tsx --test --test-timeout=30000 --test-force-exit \"tests/*.test.ts\""
+  },
+  "packageManager": "pnpm@10.33.0",
+  "dependencies": {
+    "@orderly/contracts": "workspace:*",
+    "kafkajs": "^2.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.3",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}
