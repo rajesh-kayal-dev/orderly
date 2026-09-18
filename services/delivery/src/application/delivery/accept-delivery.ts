@@ -1,5 +1,6 @@
 import type { DeliveryPartnerRepository } from "../../domain/delivery-partner/delivery-partner.repository.js";
 import type { DeliveryRepository } from "../../domain/delivery/delivery.repository.js";
+import type { DeliveryEventPublisher } from "./delivery-event.publisher.js";
 import { DeliveryPartnerProfileNotFoundError } from "../delivery-partner/errors.js";
 import {
   DeliveryNotFoundError,
@@ -8,7 +9,11 @@ import {
 } from "./errors.js";
 
 export const acceptDelivery =
-  (deliveries: DeliveryRepository, partners: DeliveryPartnerRepository) =>
+  (
+    deliveries: DeliveryRepository,
+    partners: DeliveryPartnerRepository,
+    eventPublisher?: DeliveryEventPublisher | null,
+  ) =>
   async (userId: string, id: string) => {
     const profile = await partners.findProfileByUserId(userId);
 
@@ -38,6 +43,10 @@ export const acceptDelivery =
 
     if (!accepted) {
       throw new DeliveryNotAvailableError();
+    }
+
+    if (eventPublisher) {
+      await eventPublisher.publishDeliveryAssigned(accepted);
     }
 
     return accepted;
