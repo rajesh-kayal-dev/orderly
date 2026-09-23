@@ -227,6 +227,9 @@ importers:
       '@orderly/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@orderly/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
       '@prisma/adapter-pg':
         specifier: ^7.10.0
         version: 7.10.0
@@ -276,6 +279,9 @@ importers:
 
   services/identity:
     dependencies:
+      '@orderly/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
       '@prisma/adapter-pg':
         specifier: ^7.10.0
         version: 7.10.0
@@ -331,6 +337,9 @@ importers:
       '@orderly/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@orderly/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
       '@prisma/adapter-pg':
         specifier: ^7.10.0
         version: 7.10.0
@@ -383,6 +392,9 @@ importers:
       '@orderly/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@orderly/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
       '@prisma/adapter-pg':
         specifier: ^7.10.0
         version: 7.10.0
@@ -438,6 +450,9 @@ importers:
       '@orderly/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@orderly/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
       '@prisma/adapter-pg':
         specifier: ^7.10.0
         version: 7.10.0
@@ -487,6 +502,9 @@ importers:
 
   services/restaurant:
     dependencies:
+      '@orderly/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
       '@prisma/adapter-pg':
         specifier: ^7.10.0
         version: 7.10.0

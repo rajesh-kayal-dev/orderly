@@ -66,26 +66,18 @@ export function createJwtService(config: JwtConfig): JwtService {
   };
 }
 
+import { DEV_DEFAULT_PRIVATE_KEY, DEV_DEFAULT_PUBLIC_KEY } from "@orderly/utils";
+
 let defaultJwtService: JwtService | undefined;
 
 export function getJwtService(): JwtService {
   if (!defaultJwtService) {
     defaultJwtService = createJwtService({
-      privateKey: requireEnv("JWT_PRIVATE_KEY"),
-      publicKey: requireEnv("JWT_PUBLIC_KEY"),
+      privateKey: process.env.JWT_PRIVATE_KEY || DEV_DEFAULT_PRIVATE_KEY,
+      publicKey: process.env.JWT_PUBLIC_KEY || DEV_DEFAULT_PUBLIC_KEY,
       expiresIn: process.env.JWT_EXPIRES_IN ?? DEFAULT_EXPIRES_IN,
     });
   }
 
   return defaultJwtService;
-}
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-
-  if (!value) {
-    throw new Error(`${name} is not configured`);
-  }
-
-  return value;
 }

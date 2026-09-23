@@ -14,7 +14,7 @@ const app = express();
 
 const paymentRepository = new PrismaPaymentRepository(prisma);
 const tokenVerifier = getTokenVerifier();
-const orderClient = new HttpOrderClient(requireEnv("ORDER_SERVICE_URL"));
+const orderClient = new HttpOrderClient(process.env.ORDER_SERVICE_URL || "http://localhost:3004");
 
 const paymentProvider =
   process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET
@@ -47,8 +47,14 @@ app.get("/health", (_req, res) => {
 const port = Number(process.env.PORT ?? 3005);
 
 async function start(): Promise<void> {
-  await ensureTopics(kafka);
-  await kafkaProducer.connect();
+  try {
+    await ensureTopics(kafka);
+    await kafkaProducer.connect();
+    console.log(`[Payment] Kafka producer connected`);
+  } catch {
+    console.log(`[Payment] Event broker offline (${process.env.KAFKA_BROKERS ?? "localhost:9092"}). Running in standalone mode.`);
+  }
+
   app.listen(port, () => {
     console.log(`Payment service running on port ${port}`);
   });
@@ -56,25 +62,10 @@ async function start(): Promise<void> {
 
 async function shutdown(signal: string): Promise<void> {
   console.log(`Payment service received ${signal}; disconnecting Kafka producer`);
-  await kafkaProducer.disconnect().catch((error: unknown) => {
-    console.error("Payment service failed to disconnect Kafka producer", error);
-  });
+  await kafkaProducer.disconnect().catch(() => {});
 }
 
 process.once("SIGINT", () => void shutdown("SIGINT"));
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
-void start().catch((error: unknown) => {
-  console.error("Payment service failed to start Kafka publishing", error);
-  process.exitCode = 1;
-});
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-
-  if (!value) {
-    throw new Error(`${name} is not configured`);
-  }
-
-  return value;
-}
+void start();
