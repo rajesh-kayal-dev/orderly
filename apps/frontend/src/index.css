@@ -1,0 +1,284 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-textMain font-sans;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+}
+
+@layer components {
+  /* Food Delivery Soft Rounded Cards */
+  .card {
+    @apply bg-white rounded-2xl shadow-soft transition-transform duration-300 hover:-translate-y-1;
+  }
+  
+  /* Primary Action Button */
+  .btn-primary {
+    @apply bg-primary text-white font-semibold py-2 px-6 rounded-full shadow-md hover:bg-orange-600 transition-colors duration-200 active:scale-95;
+  }
+
+  /* Secondary Action Button */
+  .btn-secondary {
+    @apply bg-secondary text-white font-semibold py-2 px-6 rounded-full shadow-md hover:bg-teal-600 transition-colors duration-200 active:scale-95;
+  }
+
+  /* Badge Outlines */
+  .badge {
+    @apply px-3 py-1 rounded-full text-sm font-semibold;
+  }
+  .badge-pending { @apply bg-yellow-100 text-yellow-700; }
+  .badge-preparing { @apply bg-blue-100 text-blue-700; }
+  .badge-delivering { @apply bg-teal-100 text-teal-700; }
+  .badge-completed { @apply bg-green-100 text-green-700; }
+
+  /* Premium Inputs */
+  .input-field {
+    @apply w-full bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-gray-700 focus:bg-white focus:border-primary focus:ring-2 focus:ring-orange-100 outline-none transition-all duration-200;
+  }
+
+  .shadow-soft {
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.02);
+  }
+
+  /* Fade In Animation */
+  /* Advanced Entrance Animations */
+  @keyframes slideUpFade {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .animate-slide-up {
+    animation: slideUpFade 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    opacity: 0;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 5px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 10px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #cbd5e1;
+  }
+
+  .stagger-1 { animation-delay: 0.05s; }
+  .stagger-2 { animation-delay: 0.1s; }
+  .stagger-3 { animation-delay: 0.15s; }
+  .stagger-4 { animation-delay: 0.2s; }
+  .stagger-5 { animation-delay: 0.25s; }
+
+  /* Premium Storefront Utilities */
+  .hero-gradient {
+    background: linear-gradient(135deg, #FF7E5F 0%, #FEB47B 100%);
+  }
+
+  .category-chip {
+    @apply flex flex-col items-center gap-2 p-4 rounded-3xl bg-white border border-gray-100 hover:border-primary hover:text-primary transition-all cursor-pointer min-w-[105px] shadow-sm hover:shadow-md m-2;
+  }
+
+  .category-chip.active {
+    @apply bg-primary/10 border-primary text-primary font-bold;
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .glass-card {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+}
+
+/* Custom scrollbar to look sleek */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f1f1; 
+}
+::-webkit-scrollbar-thumb {
+  background: #ccc; 
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #FF6B35; 
+}
+
+/* Premium Modal styling */
+.premium-modal .ant-modal-content {
+  border-radius: 2.5rem;
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.premium-modal .ant-modal-header {
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid rgba(0,0,0,0.03);
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+}
+
+.premium-modal .ant-modal-close {
+  top: 1.5rem;
+  right: 1.5rem;
+  background: #f8fafc;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  transition: all 0.2s;
+}
+
+.premium-modal .ant-modal-close:hover {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1;
+}
+
+/* --- Auth Pages Premium Styles (Matching Reference Design) --- */
+.font-handwriting {
+  font-family: 'Caveat', cursive;
+}
+
+.auth-page-wrapper {
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+  background: linear-gradient(110deg, #FDF7EF 0%, #F5E5D3 48%, #FF6228 52%, #FF4200 100%);
+  background-attachment: fixed;
+}
+
+.auth-card {
+  @apply rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col md:flex-row w-full max-w-5xl bg-white border border-white/40 z-10;
+  min-height: 580px;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Light / Warm Beige Hero Panel (Login & Role Selection) */
+.auth-illustration-light {
+  @apply hidden md:flex flex-col justify-between p-8 md:p-10 relative overflow-hidden text-gray-800;
+  background: linear-gradient(150deg, #FFFDF8 0%, #FAF3E8 60%, #F6EAD8 100%);
+  flex: 1.15;
+}
+
+/* Orange Gradient Hero Panel (Customer & Restaurant Register) */
+.auth-illustration-orange {
+  @apply hidden md:flex flex-col justify-between p-8 md:p-10 relative overflow-hidden text-white;
+  background: linear-gradient(135deg, #FF5420 0%, #FF7338 50%, #FF3D00 100%);
+  flex: 1.15;
+}
+
+.auth-form-side {
+  @apply w-full md:w-1/2 p-8 md:p-10 flex flex-col justify-between bg-white overflow-y-auto custom-scrollbar relative;
+  transition: all 0.5s ease;
+}
+
+/* Pill Badges */
+.auth-pill-badge-orange {
+  @apply inline-block px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-widest bg-orange-100 text-orange-600 border border-orange-200/60 mb-3;
+}
+
+.auth-pill-badge-white {
+  @apply inline-block px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-widest bg-white/20 text-white backdrop-blur-md border border-white/30 mb-3;
+}
+
+/* Feature Item Bullet Lists */
+.auth-feature-item-light {
+  @apply flex items-start gap-3.5 text-gray-800;
+}
+
+.auth-feature-icon-light {
+  @apply w-9 h-9 rounded-xl bg-orange-500 text-white flex items-center justify-center flex-shrink-0 shadow-md shadow-orange-500/20 text-base font-bold;
+}
+
+.auth-feature-item-orange {
+  @apply flex items-start gap-3.5 text-white;
+}
+
+.auth-feature-icon-orange {
+  @apply w-9 h-9 rounded-xl bg-white/20 backdrop-blur-md text-white flex items-center justify-center flex-shrink-0 border border-white/30 text-base font-bold;
+}
+
+/* Floating Input with Icon */
+.auth-input-container {
+  @apply relative flex items-center w-full;
+}
+
+.auth-input-icon {
+  @apply absolute left-4 text-gray-400 text-base pointer-events-none transition-colors duration-200;
+}
+
+.auth-input {
+  @apply w-full bg-gray-50/90 border border-gray-200/80 rounded-2xl pl-11 pr-4 py-3 text-sm text-gray-800 placeholder-gray-400 transition-all duration-200 outline-none focus:bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10;
+}
+
+.auth-input-container:focus-within .auth-input-icon {
+  @apply text-orange-500;
+}
+
+/* Action Pill Button */
+.auth-btn-primary {
+  @apply w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold py-3.5 px-6 rounded-2xl shadow-lg shadow-orange-500/30 flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.99] text-base cursor-pointer border-none;
+}
+
+/* Social Buttons */
+.auth-social-btn {
+  @apply flex-1 flex items-center justify-center gap-2.5 py-3 px-4 bg-white border border-gray-200/80 rounded-2xl hover:bg-gray-50/80 transition-all duration-200 font-semibold text-gray-700 text-sm shadow-sm cursor-pointer;
+}
+
+/* Trust Badges Footer Row */
+.auth-trust-badge {
+  @apply flex items-center gap-2 p-2 px-2.5 bg-orange-50/60 border border-orange-100/80 rounded-xl text-[10px] text-gray-700 font-semibold flex-1 justify-center;
+}
+
+/* Notice Box for Restaurant Registration */
+.auth-notice-box {
+  @apply bg-orange-50/90 border border-orange-200/80 rounded-2xl p-3.5 text-[12px] leading-relaxed text-orange-800 font-medium my-1;
+}
+
+/* Role Selection Cards */
+.auth-role-card {
+  @apply flex items-center gap-4 p-4 border border-gray-200/80 rounded-2xl cursor-pointer transition-all duration-200 hover:border-orange-400 hover:bg-orange-50/30 hover:shadow-md active:scale-[0.99] bg-white;
+}
+
+/* Animations */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+.animate-float {
+  animation: float 5s ease-in-out infinite;
+}
+
+
