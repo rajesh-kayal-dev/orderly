@@ -5,7 +5,7 @@ import type {
   ListOrdersResult,
   OrderRepository,
 } from "../../../domain/order/order.repository.js";
-import type { Order, OrderItem, OrderStatus, PaymentStatus } from "../../../domain/order/order.types.js";
+import type { Order, OrderItem, OrderStatus, PaymentMethod, PaymentStatus } from "../../../domain/order/order.types.js";
 
 const safeOrderItemSelect = {
   id: true,
@@ -20,10 +20,13 @@ const safeOrderItemSelect = {
 const safeOrderSelect = {
   id: true,
   customerId: true,
+  guestSessionId: true,
   restaurantId: true,
   deliveryAddressId: true,
   deliveryAddress: true,
+  contactInfo: true,
   notes: true,
+  idempotencyKey: true,
   status: true,
   paymentStatus: true,
   paymentMethod: true,
@@ -46,11 +49,14 @@ type OrderItemRow = {
 
 type OrderRow = {
   id: string;
-  customerId: string;
+  customerId: string | null;
+  guestSessionId: string | null;
   restaurantId: string;
   deliveryAddressId: string | null;
   deliveryAddress: Prisma.JsonValue;
+  contactInfo: Prisma.JsonValue;
   notes: string | null;
+  idempotencyKey: string | null;
   status: string;
   paymentStatus: string;
   paymentMethod: string;
@@ -78,13 +84,16 @@ function toOrder(order: OrderRow): Order {
   return {
     id: order.id,
     customerId: order.customerId,
+    guestSessionId: order.guestSessionId,
     restaurantId: order.restaurantId,
     deliveryAddressId: order.deliveryAddressId,
     deliveryAddress: order.deliveryAddress === null ? null : order.deliveryAddress,
+    contactInfo: order.contactInfo === null ? null : order.contactInfo,
     notes: order.notes,
+    idempotencyKey: order.idempotencyKey,
     status: order.status as OrderStatus,
     paymentStatus: order.paymentStatus as PaymentStatus,
-    paymentMethod: order.paymentMethod as "cod",
+    paymentMethod: order.paymentMethod as PaymentMethod,
     subtotal: order.subtotal,
     deliveryFee: order.deliveryFee,
     totalAmount: order.totalAmount,
@@ -100,12 +109,19 @@ export class PrismaOrderRepository implements OrderRepository {
   async createOrder(data: CreateOrderData): Promise<Order> {
     const order = await this.db.order.create({
       data: {
-        customerId: data.customerId,
+        customerId: data.customerId || null,
+        guestSessionId: data.guestSessionId || null,
         restaurantId: data.restaurantId,
-        deliveryAddressId: data.deliveryAddressId,
+        deliveryAddressId: data.deliveryAddressId || null,
         deliveryAddress:
           data.deliveryAddress === null ? Prisma.JsonNull : (data.deliveryAddress as Prisma.InputJsonValue),
+        contactInfo:
+          data.contactInfo === null || data.contactInfo === undefined
+            ? Prisma.JsonNull
+            : (data.contactInfo as Prisma.InputJsonValue),
         notes: data.notes,
+        idempotencyKey: data.idempotencyKey || null,
+        paymentMethod: (data.paymentMethod as any) || "cod",
         subtotal: data.subtotal,
         deliveryFee: data.deliveryFee,
         totalAmount: data.totalAmount,
@@ -146,6 +162,22 @@ export class PrismaOrderRepository implements OrderRepository {
     return order ? toOrder(order as unknown as OrderRow) : null;
   }
 
+  async findOrderByIdempotencyKey(key: string): Promise<Order | null> {
+    if (!key) return null;
+    const order = await this.db.order.findUnique({
+      where: { idempotencyKey: key },
+      select: {
+        ...safeOrderSelect,
+        items: {
+          select: safeOrderItemSelect,
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+
+    return order ? toOrder(order as unknown as OrderRow) : null;
+  }
+
   async listOrdersByCustomer(customerId: string, params: ListOrdersParams): Promise<ListOrdersResult> {
     const [orders, total] = await Promise.all([
       this.db.order.findMany({
@@ -166,7 +198,30 @@ export class PrismaOrderRepository implements OrderRepository {
       }),
     ]);
 
-    return { orders: orders.map(toOrder), total };
+    return { orders: orders.map((o) => toOrder(o as unknown as OrderRow)), total };
+  }
+
+  async listOrdersByGuestSession(guestSessionId: string, params: ListOrdersParams): Promise<ListOrdersResult> {
+    const [orders, total] = await Promise.all([
+      this.db.order.findMany({
+        where: { guestSessionId },
+        select: {
+          ...safeOrderSelect,
+          items: {
+            select: safeOrderItemSelect,
+            orderBy: { createdAt: "asc" },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        skip: params.offset,
+        take: params.limit,
+      }),
+      this.db.order.count({
+        where: { guestSessionId },
+      }),
+    ]);
+
+    return { orders: orders.map((o) => toOrder(o as unknown as OrderRow)), total };
   }
 
   async listOrdersByRestaurant(restaurantId: string, params: ListOrdersParams): Promise<ListOrdersResult> {
@@ -189,7 +244,7 @@ export class PrismaOrderRepository implements OrderRepository {
       }),
     ]);
 
-    return { orders: orders.map(toOrder), total };
+    return { orders: orders.map((o) => toOrder(o as unknown as OrderRow)), total };
   }
 
   async updateOrderStatus(id: string, status: OrderStatus): Promise<Order | null> {
@@ -214,7 +269,7 @@ export class PrismaOrderRepository implements OrderRepository {
       },
     });
 
-    return toOrder(order);
+    return toOrder(order as unknown as OrderRow);
   }
 
   async updateOrderPaymentStatus(id: string, paymentStatus: PaymentStatus): Promise<Order | null> {
@@ -239,6 +294,6 @@ export class PrismaOrderRepository implements OrderRepository {
       },
     });
 
-    return toOrder(order);
+    return toOrder(order as unknown as OrderRow);
   }
 }

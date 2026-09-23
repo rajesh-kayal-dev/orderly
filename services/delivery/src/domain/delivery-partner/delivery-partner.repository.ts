@@ -14,6 +14,7 @@ export interface UpdateDeliveryPartnerData {
 export interface DeliveryPartnerRepository {
   create(data: CreateDeliveryPartnerData): Promise<DeliveryPartner>;
   findProfileByUserId(userId: string): Promise<DeliveryPartner | null>;
+  findAll(): Promise<DeliveryPartner[]>;
   update(id: string, data: UpdateDeliveryPartnerData): Promise<DeliveryPartner | null>;
   setAvailability(id: string, isAvailable: boolean): Promise<DeliveryPartner | null>;
 }

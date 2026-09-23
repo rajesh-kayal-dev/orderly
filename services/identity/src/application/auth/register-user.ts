@@ -1,10 +1,13 @@
-﻿import bcrypt from "bcryptjs";
+import bcrypt from "bcryptjs";
 import type { UserRepository } from "../../domain/user/user.repository.js";
+import type { UserRole } from "../../domain/user/user.types.js";
 
 export interface RegisterUserInput {
   email: string;
   password: string;
   fullName: string;
+  phoneNumber?: string | null;
+  role?: UserRole;
 }
 
 export class EmailAlreadyExistsError extends Error {
@@ -32,6 +35,8 @@ export const registerUser =
       email,
       passwordHash,
       fullName,
+      phoneNumber: input.phoneNumber || null,
+      role: input.role,
     });
 
     return {

@@ -110,7 +110,8 @@ export default function OrderTracking() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const urlOrderId = searchParams.get('orderId');
+  const urlOrderId = searchParams.get('orderId') || sessionStorage.getItem('last_guest_order_id');
+  const guestToken = sessionStorage.getItem('guest_token') || localStorage.getItem('guest_token');
 
   const [activeOrders, setActiveOrders] = useState([]);
   const [selectedOrderIndex, setSelectedOrderIndex] = useState(0);
@@ -123,16 +124,40 @@ export default function OrderTracking() {
   const [socketDriverPos, setSocketDriverPos] = useState(null);
 
   const fetchOrders = async () => {
-    if (!token) {
+    if (!token && !guestToken && !urlOrderId) {
       setLoading(false);
       return;
     }
     
     try {
       setLoading(true);
-      const response = await axios.get('/orders/me');
-      if (response.data.success && Array.isArray(response.data.data) && response.data.data.length > 0) {
-        const rawOrders = response.data.data;
+      let rawOrders = [];
+
+      // If specific orderId requested, fetch single order details
+      if (urlOrderId) {
+        try {
+          const singleRes = await axios.get(`/orders/${urlOrderId}`);
+          if (singleRes.data.success && singleRes.data.data) {
+            rawOrders = [singleRes.data.data];
+          }
+        } catch (singleErr) {
+          // fallback to /orders
+        }
+      }
+
+      // If no single order found, fetch list
+      if (rawOrders.length === 0) {
+        try {
+          const response = await axios.get('/orders');
+          if (response.data.success && Array.isArray(response.data.data)) {
+            rawOrders = response.data.data;
+          }
+        } catch {
+          // fallback
+        }
+      }
+
+      if (rawOrders.length > 0) {
         const parsedOrders = rawOrders.map(foundActive => {
           const st = (foundActive.status || 'placed').toLowerCase();
           const itemsArr = foundActive.items || foundActive.OrderItems || [];
@@ -145,15 +170,17 @@ export default function OrderTracking() {
             image: it.menuItem?.image_url || it.image || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=200'
           }));
 
-          const totalPaid = Number(foundActive.total_amount || 0);
-          const deliveryFee = totalPaid > 0 ? 30.00 : 0;
-          const platformFee = totalPaid > 0 ? 5.00 : 0;
-          const subtotal = Math.max(0, totalPaid - deliveryFee - platformFee);
-          const gst = totalPaid * 0.05;
+          const totalPaid = Number(foundActive.total || foundActive.total_amount || 0);
+          const deliveryFee = Number(foundActive.delivery_fee || 30.00);
+          const platformFee = Number(foundActive.platform_fee || 5.00);
+          const subtotal = Number(foundActive.subtotal || Math.max(0, totalPaid - deliveryFee - platformFee));
+          const gst = Number(foundActive.tax || totalPaid * 0.05);
 
           const addrObj = foundActive.deliveryAddress || foundActive.DeliveryAddress;
-          const deliveryAddressText = addrObj
-            ? `${addrObj.address_line1 || addrObj.street || 'Address'}, ${addrObj.city || 'Kolkata'}, ${addrObj.state || 'WB'}${addrObj.postal_code ? ` - ${addrObj.postal_code}` : ''}`
+          const deliveryAddressText = typeof foundActive.delivery_address === 'string' && foundActive.delivery_address
+            ? foundActive.delivery_address
+            : addrObj
+            ? `${addrObj.address_line1 || addrObj.street || 'Address'}, ${addrObj.city || 'Indore'}`
             : 'Delivery Address Specified at Checkout';
 
           const custCoords = (addrObj && addrObj.latitude && addrObj.longitude)
@@ -175,7 +202,7 @@ export default function OrderTracking() {
             estimatedTime: st === 'delivered' || st === 'completed' ? 'Delivered' : st === 'cancelled' ? 'Cancelled' : '25 – 35 minutes',
             restaurant: {
               name: foundActive.restaurant?.name || foundActive.Restaurant?.name || "Orderly Restaurant",
-              location: foundActive.restaurant?.address || foundActive.restaurant?.location || "Kolkata",
+              location: foundActive.restaurant?.address || foundActive.restaurant?.location || "Indore",
               logo: foundActive.restaurant?.image_url || foundActive.Restaurant?.image_url || "https://images.unsplash.com/photo-1550547660-d9450f859349?w=100",
               phone: foundActive.restaurant?.phone_number || "+91 98301 00000"
             },

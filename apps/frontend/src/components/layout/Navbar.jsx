@@ -84,17 +84,41 @@ export default function Navbar({ activeOrdersCount = 0 }) {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useSelector((state) => state.auth);
+  const { user, profile, isAuthenticated } = useSelector((state) => state.auth);
   const { items } = useSelector((state) => state.cart);
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const dropdownRef = useRef(null);
 
   const cartCount = items.reduce((t, i) => t + (i.quantity || 1), 0);
 
+  const isUserLoggedIn = Boolean(isAuthenticated && (user || profile));
+  const rawName = user?.full_name || profile?.full_name || user?.name || profile?.name || user?.email || '';
+  const displayName = isUserLoggedIn
+    ? (rawName.split(' ')[0] || user?.email?.split('@')[0] || 'User')
+    : 'Guest';
+
+  const userInitial = isUserLoggedIn
+    ? (rawName.trim().charAt(0).toUpperCase() || 'U')
+    : 'G';
+
+  const profileImage = !imgError
+    ? (user?.profile_picture || user?.avatar_url || user?.picture || profile?.profile_picture || profile?.avatar_url || null)
+    : null;
+
   const handleLogout = () => {
     dispatch(logout());
+    dispatch(resetCartState());
+    setDropdownOpen(false);
+    navigate('/login');
+  };
+
+  const handleStartFreshGuestSession = () => {
+    sessionStorage.removeItem('guest_token');
+    localStorage.removeItem('guest_token');
+    sessionStorage.removeItem('guest_session_id');
     dispatch(resetCartState());
     setDropdownOpen(false);
     navigate('/login');
@@ -181,52 +205,106 @@ export default function Navbar({ activeOrdersCount = 0 }) {
             <div className="relative hidden sm:block" ref={dropdownRef}>
               <button
                 onClick={() => setDropdownOpen((o) => !o)}
-                className="flex items-center gap-2 px-3 py-2 rounded-full text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-all border border-transparent hover:border-neutral-200"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-all border border-neutral-200/70 shadow-sm hover:shadow"
               >
-                {/* Avatar circle */}
-                <span className="w-7 h-7 rounded-full bg-orange-100 flex items-center justify-center text-orange-500">
-                  <IconUser />
-                </span>
-                <span>{userName}</span>
-                <span className={`transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`}>
+                {/* Avatar: Google profile pic OR First letter circle (R for Rajesh, G for Guest) */}
+                {profileImage ? (
+                  <img
+                    src={profileImage}
+                    alt={displayName}
+                    onError={() => setImgError(true)}
+                    className="w-7 h-7 rounded-full object-cover border border-neutral-200"
+                  />
+                ) : (
+                  <span
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${
+                      isUserLoggedIn ? 'bg-[#0284c7]' : 'bg-[#ea580c]'
+                    }`}
+                  >
+                    {userInitial}
+                  </span>
+                )}
+                <span className="font-semibold text-neutral-800 text-xs sm:text-sm">{displayName}</span>
+                <span className={`text-neutral-400 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`}>
                   <IconChevron />
                 </span>
               </button>
 
               {/* Dropdown Panel */}
               {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-white border border-neutral-100 rounded-2xl shadow-xl py-1 z-50 animate-fade-in">
-                  <Link
-                    to="/customer/profile"
-                    onClick={() => setDropdownOpen(false)}
-                    className="flex items-center gap-2.5 px-4 py-3 text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
-                  >
-                    <span className="text-neutral-400"><IconProfile /></span>
-                    My Profile
-                  </Link>
-                  <div className="mx-3 border-t border-neutral-100" />
-                  <Link
-                    to="/customer/orders"
-                    onClick={() => setDropdownOpen(false)}
-                    className="flex items-center gap-2.5 px-4 py-3 text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
-                  >
-                    <span className="text-neutral-400">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
-                        <rect x="9" y="3" width="6" height="4" rx="1"/>
-                        <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
-                      </svg>
-                    </span>
-                    My Orders
-                  </Link>
-                  <div className="mx-3 border-t border-neutral-100" />
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
-                  >
-                    <span className="text-neutral-400"><IconLogout /></span>
-                    Logout
-                  </button>
+                <div className="absolute right-0 mt-2 w-52 bg-white border border-neutral-100 rounded-2xl shadow-xl py-1.5 z-50 animate-fade-in divide-y divide-neutral-100">
+                  <div className="px-4 py-2.5 bg-neutral-50/80 rounded-t-2xl">
+                    <div className="text-xs font-bold text-neutral-900 truncate">{rawName || 'Guest User'}</div>
+                    <div className="text-[11px] text-neutral-500 font-medium truncate">
+                      {isUserLoggedIn ? (user?.email || 'Registered Customer') : 'Guest Session Active'}
+                    </div>
+                  </div>
+
+                  {isUserLoggedIn ? (
+                    <div>
+                      <Link
+                        to="/customer/profile"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-xs sm:text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
+                      >
+                        <span className="text-neutral-400"><IconProfile /></span>
+                        My Profile
+                      </Link>
+                      <Link
+                        to="/customer/orders"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-xs sm:text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
+                      >
+                        <span className="text-neutral-400">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+                            <rect x="9" y="3" width="6" height="4" rx="1"/>
+                            <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
+                          </svg>
+                        </span>
+                        My Orders
+                      </Link>
+                    </div>
+                  ) : (
+                    <div>
+                      <Link
+                        to="/customer/tracking"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-xs sm:text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
+                      >
+                        <span className="text-neutral-400"><IconClock /></span>
+                        Track Orders
+                      </Link>
+                      <Link
+                        to="/login"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-xs sm:text-sm text-orange-600 font-bold hover:bg-orange-50 transition-colors"
+                      >
+                        <IconUser />
+                        Sign In / Register
+                      </Link>
+                    </div>
+                  )}
+
+                  <div>
+                    {isUserLoggedIn ? (
+                      <button
+                        onClick={handleLogout}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs sm:text-sm text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        <span className="text-red-500"><IconLogout /></span>
+                        Logout
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleStartFreshGuestSession}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs text-neutral-600 hover:bg-neutral-50 transition-colors"
+                      >
+                        <span className="text-neutral-400"><IconLogout /></span>
+                        Reset Guest Session
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

@@ -91,6 +91,32 @@ export default function Register() {
   const [success, setSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
+
+  const handleContinueAsGuest = async () => {
+    try {
+      setGuestLoading(true);
+      let guestToken = sessionStorage.getItem('guest_token') || localStorage.getItem('guest_token');
+      if (!guestToken) {
+        const res = await axios.post('/auth/guest-session');
+        if (res.data.success && res.data.data?.token) {
+          guestToken = res.data.data.token;
+          sessionStorage.setItem('guest_token', guestToken);
+          localStorage.setItem('guest_token', guestToken);
+          if (res.data.data.guestSessionId) {
+            sessionStorage.setItem('guest_session_id', res.data.data.guestSessionId);
+          }
+        }
+      }
+      dispatch(fetchCart());
+      navigate('/customer');
+    } catch (err) {
+      console.warn('Guest session creation notice:', err);
+      navigate('/customer');
+    } finally {
+      setGuestLoading(false);
+    }
+  };
 
   const handleRedirect = (role) => {
     switch (role?.toLowerCase()) {
@@ -141,7 +167,13 @@ export default function Register() {
   };
 
   const handleGoogleLogin = () => {
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+    const isCloudPreview =
+      typeof window !== 'undefined' &&
+      (window.location.port === '3000' ||
+        window.location.hostname.includes('.run.app') ||
+        window.location.hostname.includes('googleusercontent') ||
+        window.location.hostname.includes('ais-'));
+    const apiUrl = isCloudPreview ? '/api' : (import.meta.env.VITE_API_URL || '/api');
     window.location.href = `${apiUrl}/auth/google`;
   };
 
@@ -483,27 +515,35 @@ export default function Register() {
                       const data = response.data.data;
                       setSuccess('Registration successful! Redirecting to your dashboard...');
                       
-                      if (data && data.token) {
+                      if (data && (data.token || data.accessToken)) {
+                        const token = data.token || data.accessToken;
+                        const userObj = data.user || {
+                          id: data.id,
+                          email: data.email,
+                          role: data.role || values.role,
+                          full_name: data.full_name,
+                          phone_number: data.phone_number
+                        };
+                        const userRole = (userObj.role || values.role || 'customer').toLowerCase();
+
                         dispatch(loginSuccess({
-                          user: { 
-                            id: data.id,
-                            email: data.email, 
-                            role: data.role,
-                            full_name: data.full_name,
-                            phone_number: data.phone_number
-                          },
+                          user: userObj,
                           profile: data.profile,
-                          token: data.token
+                          token: token
                         }));
 
-                        if (data.role?.toLowerCase() === 'customer') {
+                        if (userRole === 'customer') {
                           dispatch(fetchCart());
                         }
-                      }
 
-                      setTimeout(() => {
-                        handleRedirect(data?.role || values.role);
-                      }, 1200);
+                        setTimeout(() => {
+                          handleRedirect(userRole);
+                        }, 1200);
+                      } else {
+                        setTimeout(() => {
+                          handleRedirect((data?.role || values.role || 'customer').toLowerCase());
+                        }, 1200);
+                      }
                     }
                   } catch (err) {
                     console.error('Registration error:', err.response?.data);
@@ -733,15 +773,35 @@ export default function Register() {
                         </div>
 
                         <div className="flex items-center gap-3">
-                          <button type="button" onClick={handleGoogleLogin} className="auth-social-btn">
+                          <button type="button" onClick={handleGoogleLogin} className="auth-social-btn flex-1">
                             <GoogleOutlined className="text-red-500 text-base" /> 
                             <span>Google</span>
                           </button>
-                          <button type="button" className="auth-social-btn">
+                          <button type="button" className="auth-social-btn flex-1">
                             <FacebookFilled className="text-blue-600 text-base" /> 
                             <span>Facebook</span>
                           </button>
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={handleContinueAsGuest}
+                          disabled={guestLoading}
+                          className="w-full flex items-center justify-between py-2.5 px-4 bg-orange-50/80 hover:bg-orange-100/90 text-orange-700 font-bold rounded-2xl border border-orange-200/80 transition-all shadow-sm hover:shadow active:scale-[0.99] text-xs sm:text-sm group mt-3"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="w-6 h-6 rounded-full bg-orange-500 text-white flex items-center justify-center text-xs shadow-sm">
+                              <UserOutlined />
+                            </span>
+                            <span className="font-semibold text-gray-800 group-hover:text-orange-600 transition-colors">
+                              {guestLoading ? 'Starting Guest Session...' : 'Continue as Guest'}
+                            </span>
+                          </div>
+                          <span className="text-[11px] font-medium text-orange-600/90 group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
+                            <span>Explore Menu</span>
+                            <ArrowRightOutlined className="text-[10px]" />
+                          </span>
+                        </button>
                       </>
                     )}
 

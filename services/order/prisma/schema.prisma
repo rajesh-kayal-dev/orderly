@@ -28,18 +28,23 @@ enum PaymentStatus {
 
 enum PaymentMethod {
   cod
+  online
+  vnpay
+  razorpay
 }
 
 model Cart {
-  id           String    @id @default(uuid())
-  customerId   String    @unique
-  restaurantId String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id             String    @id @default(uuid())
+  customerId     String?   @unique
+  guestSessionId String?   @unique
+  restaurantId   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   items CartItem[]
 
   @@index([customerId])
+  @@index([guestSessionId])
 }
 
 model CartItem {
@@ -58,11 +63,14 @@ model CartItem {
 
 model Order {
   id                String        @id @default(uuid())
-  customerId        String
+  customerId        String?
+  guestSessionId    String?
   restaurantId      String
   deliveryAddressId String?
   deliveryAddress   Json?
+  contactInfo       Json?
   notes             String?
+  idempotencyKey    String?       @unique
   status            OrderStatus   @default(placed)
   paymentStatus     PaymentStatus @default(pending)
   paymentMethod     PaymentMethod @default(cod)
@@ -75,18 +83,19 @@ model Order {
   items OrderItem[]
 
   @@index([customerId])
+  @@index([guestSessionId])
   @@index([restaurantId])
   @@index([status])
 }
 
 model OrderItem {
-  id           String  @id @default(uuid())
+  id           String   @id @default(uuid())
   orderId      String
   menuItemId   String
   menuItemName String
   quantity     Int
-  unitPrice    Decimal @db.Decimal(10, 2)
-  subtotal     Decimal @db.Decimal(10, 2)
+  unitPrice    Decimal  @db.Decimal(10, 2)
+  subtotal     Decimal  @db.Decimal(10, 2)
   createdAt    DateTime @default(now())
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)

@@ -7,20 +7,31 @@ export class KafkaOrderEventPublisher implements OrderEventPublisher {
   constructor(private readonly producer: OrderlyProducer) {}
 
   async publishOrderPlaced(order: Order): Promise<void> {
+    const payload: any = {
+      orderId: order.id,
+      restaurantId: order.restaurantId,
+      subtotal: order.subtotal.toFixed(2),
+      deliveryFee: order.deliveryFee.toFixed(2),
+      totalAmount: order.totalAmount.toFixed(2),
+      currency: "INR",
+      paymentMethod: order.paymentMethod,
+      paymentStatus: order.paymentStatus,
+      createdAt: order.createdAt.toISOString(),
+    };
+
+    if (order.customerId) {
+      payload.customerId = order.customerId;
+    }
+    if (order.guestSessionId) {
+      payload.guestSessionId = order.guestSessionId;
+    }
+    if (order.contactInfo) {
+      payload.contactInfo = order.contactInfo;
+    }
+
     await this.producer.publish(
       EventTypes.OrderPlaced,
-      {
-        orderId: order.id,
-        customerId: order.customerId,
-        restaurantId: order.restaurantId,
-        subtotal: order.subtotal.toFixed(2),
-        deliveryFee: order.deliveryFee.toFixed(2),
-        totalAmount: order.totalAmount.toFixed(2),
-        currency: "INR",
-        paymentMethod: order.paymentMethod,
-        paymentStatus: order.paymentStatus,
-        createdAt: order.createdAt.toISOString(),
-      },
+      payload,
       { key: order.id },
     );
   }

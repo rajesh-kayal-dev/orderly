@@ -8,11 +8,11 @@ datasource db {
 }
 
 enum Role {
-  CUSTOMER
-  RESTAURANT
-  DELIVERY_PARTNER
-  ADMIN
-  CUSTOMER_SUPPORT
+  CUSTOMER         @map("customer")
+  RESTAURANT       @map("restaurant")
+  DELIVERY_PARTNER @map("delivery_partner")
+  ADMIN            @map("admin")
+  CUSTOMER_SUPPORT @map("customer_support")
 }
 
 enum AccountStatus {
@@ -37,4 +37,16 @@ model User {
   @@index([role])
   @@index([status])
   @@index([status, role])
+}
+
+model GuestSession {
+  id         String    @id @default(uuid())
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([tokenHash])
+  @@index([expiresAt])
 }

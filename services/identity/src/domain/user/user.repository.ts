@@ -1,9 +1,11 @@
-﻿import type { AccountStatus, User, UserCredentials } from "./user.types.js";
+import type { AccountStatus, User, UserCredentials, UserRole } from "./user.types.js";
 
 export interface CreateUserData {
   email: string;
   passwordHash: string;
   fullName: string;
+  phoneNumber?: string | null;
+  role?: UserRole;
 }
 
 export interface UpdateProfileData {

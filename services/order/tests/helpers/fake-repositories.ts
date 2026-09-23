@@ -25,9 +25,16 @@ export function makeCartItem(id: string, cartId: string, menuItemId: string, qua
   return { id, cartId, menuItemId, quantity, createdAt: now, updatedAt: now };
 }
 
-export function makeCart(id: string, customerId: string, restaurantId: string | null, items: CartItem[]): Cart {
+export function makeCart(
+  id: string,
+  owner: string | { customerId?: string | null; guestSessionId?: string | null } | null,
+  restaurantId: string | null,
+  items: CartItem[],
+): Cart {
   const now = new Date();
-  return { id, customerId, restaurantId, createdAt: now, updatedAt: now, items };
+  const customerId = typeof owner === "string" ? owner : owner?.customerId ?? null;
+  const guestSessionId = typeof owner === "object" ? owner?.guestSessionId ?? null : null;
+  return { id, customerId, guestSessionId, restaurantId, createdAt: now, updatedAt: now, items };
 }
 
 export function makeOrder(id: string, overrides: Partial<Order> = {}): Order {
@@ -111,14 +118,17 @@ export function createFakeRepositories(): FakeRepositoryHandle {
   function hydrateCart(cartId: string): Cart | null {
     const stored = carts.find((c) => c.id === cartId) ?? null;
     if (!stored) return null;
-    return makeCart(
-      stored.id,
-      stored.customerId,
-      stored.restaurantId,
-      cartItems
+    return {
+      id: stored.id,
+      customerId: stored.customerId,
+      guestSessionId: stored.guestSessionId,
+      restaurantId: stored.restaurantId,
+      createdAt: stored.createdAt,
+      updatedAt: stored.updatedAt,
+      items: cartItems
         .filter((i) => i.cartId === cartId)
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
-    );
+    };
   }
 
   const cartRepo: CartRepository = {
@@ -127,12 +137,17 @@ export function createFakeRepositories(): FakeRepositoryHandle {
       return cart ? hydrateCart(cart.id) : null;
     },
 
+    async findCartByGuestSession(guestSessionId) {
+      const cart = carts.find((c) => c.guestSessionId === guestSessionId) ?? null;
+      return cart ? hydrateCart(cart.id) : null;
+    },
+
     async findCartById(cartId) {
       return hydrateCart(cartId);
     },
 
-    async createCart(customerId, restaurantId) {
-      const cart = makeCart(nextCartId(), customerId, restaurantId, []);
+    async createCart(owner, restaurantId) {
+      const cart = makeCart(nextCartId(), owner, restaurantId, []);
       carts.push(cart);
       return cart;
     },

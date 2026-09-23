@@ -1,5 +1,6 @@
 import type { OrderRepository } from "../../domain/order/order.repository.js";
 import type { Order } from "../../domain/order/order.types.js";
+import type { OrderActor } from "./create-order.js";
 
 export interface ListCustomerOrdersResult {
   orders: Order[];
@@ -13,5 +14,12 @@ export interface ListOrdersParams {
 
 export const listCustomerOrders =
   (orders: OrderRepository) =>
-  async (customerId: string, params: ListOrdersParams): Promise<ListCustomerOrdersResult> =>
-    orders.listOrdersByCustomer(customerId, params);
+  async (actor: OrderActor, params: ListOrdersParams): Promise<ListCustomerOrdersResult> => {
+    if (actor.customerId) {
+      return orders.listOrdersByCustomer(actor.customerId, params);
+    }
+    if (actor.guestSessionId) {
+      return orders.listOrdersByGuestSession(actor.guestSessionId, params);
+    }
+    return { orders: [], total: 0 };
+  };

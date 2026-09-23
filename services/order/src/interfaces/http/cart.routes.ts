@@ -8,7 +8,7 @@ import type { CartRepository } from "../../domain/order/cart.repository.js";
 import type { MenuCatalogClient } from "../../domain/menu-catalog/menu-catalog.client.js";
 import type { TokenVerifier } from "../../infrastructure/security/token.js";
 import { mapErrorToResponse } from "./error-handler.js";
-import { requireAuth, type AuthenticatedRequest } from "./middleware/auth.middleware.js";
+import { requireActor, type AuthenticatedActorRequest } from "./middleware/auth.middleware.js";
 import {
   addCartItemSchema,
   cartItemIdParamsSchema,
@@ -33,35 +33,31 @@ export const createCartRouter = ({
   const updateCartItemQuantityUseCase = updateCartItemQuantity(cartRepository);
   const removeCartItemUseCase = removeCartItem(cartRepository);
   const clearCartUseCase = clearCart(cartRepository);
-  const requireAuthMiddleware = requireAuth({ verifyAccessToken: tokenVerifier.verify });
+  const requireActorMiddleware = requireActor({ verifyAccessToken: tokenVerifier.verify });
 
-  router.get("/", requireAuthMiddleware, async (req, res) => {
+  router.get("/", requireActorMiddleware, async (req, res) => {
     try {
-      const cart = await getCartUseCase((req as AuthenticatedRequest).userId);
+      const actorReq = req as AuthenticatedActorRequest;
+      const cart = await getCartUseCase({
+        customerId: actorReq.userId,
+        guestSessionId: actorReq.guestSessionId,
+      });
       return void res.status(200).json({ success: true, data: cart });
     } catch (error) {
       return void mapErrorToResponse(res, error);
     }
   });
 
-  router.post("/items", requireAuthMiddleware, async (req, res) => {
+  router.post("/items", requireActorMiddleware, async (req, res) => {
     try {
       const input = addCartItemSchema.parse(req.body);
-      const cart = await addCartItemUseCase((req as AuthenticatedRequest).userId, input);
-      return void res.status(200).json({ success: true, data: cart });
-    } catch (error) {
-      return void mapErrorToResponse(res, error);
-    }
-  });
-
-  router.put("/items/:itemId", requireAuthMiddleware, async (req, res) => {
-    try {
-      const { itemId } = cartItemIdParamsSchema.parse(req.params);
-      const { quantity } = updateCartItemQuantitySchema.parse(req.body);
-      const cart = await updateCartItemQuantityUseCase(
-        (req as AuthenticatedRequest).userId,
-        itemId,
-        quantity,
+      const actorReq = req as AuthenticatedActorRequest;
+      const cart = await addCartItemUseCase(
+        {
+          customerId: actorReq.userId,
+          guestSessionId: actorReq.guestSessionId,
+        },
+        input
       );
       return void res.status(200).json({ success: true, data: cart });
     } catch (error) {
@@ -69,19 +65,49 @@ export const createCartRouter = ({
     }
   });
 
-  router.delete("/items/:itemId", requireAuthMiddleware, async (req, res) => {
+  router.put("/items/:itemId", requireActorMiddleware, async (req, res) => {
     try {
       const { itemId } = cartItemIdParamsSchema.parse(req.params);
-      const cart = await removeCartItemUseCase((req as AuthenticatedRequest).userId, itemId);
+      const { quantity } = updateCartItemQuantitySchema.parse(req.body);
+      const actorReq = req as AuthenticatedActorRequest;
+      const cart = await updateCartItemQuantityUseCase(
+        {
+          customerId: actorReq.userId,
+          guestSessionId: actorReq.guestSessionId,
+        },
+        itemId,
+        quantity
+      );
       return void res.status(200).json({ success: true, data: cart });
     } catch (error) {
       return void mapErrorToResponse(res, error);
     }
   });
 
-  router.delete("/", requireAuthMiddleware, async (req, res) => {
+  router.delete("/items/:itemId", requireActorMiddleware, async (req, res) => {
     try {
-      const cart = await clearCartUseCase((req as AuthenticatedRequest).userId);
+      const { itemId } = cartItemIdParamsSchema.parse(req.params);
+      const actorReq = req as AuthenticatedActorRequest;
+      const cart = await removeCartItemUseCase(
+        {
+          customerId: actorReq.userId,
+          guestSessionId: actorReq.guestSessionId,
+        },
+        itemId
+      );
+      return void res.status(200).json({ success: true, data: cart });
+    } catch (error) {
+      return void mapErrorToResponse(res, error);
+    }
+  });
+
+  router.delete("/", requireActorMiddleware, async (req, res) => {
+    try {
+      const actorReq = req as AuthenticatedActorRequest;
+      const cart = await clearCartUseCase({
+        customerId: actorReq.userId,
+        guestSessionId: actorReq.guestSessionId,
+      });
       return void res.status(200).json({ success: true, data: cart });
     } catch (error) {
       return void mapErrorToResponse(res, error);

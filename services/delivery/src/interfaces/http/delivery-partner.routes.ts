@@ -35,6 +35,15 @@ export const createDeliveryPartnerRouter = ({
   const requireAuthMiddleware = requireAuth({ verifyAccessToken: tokenVerifier.verify });
   const requirePartnerMiddleware = requireRole("DELIVERY_PARTNER");
 
+  router.get("/", async (_req, res) => {
+    try {
+      const partners = await deliveryPartnerRepository.findAll();
+      return void res.status(200).json({ success: true, data: partners });
+    } catch (error) {
+      return void mapErrorToResponse(res, error);
+    }
+  });
+
   router.post("/me", requireAuthMiddleware, requirePartnerMiddleware, async (req, res) => {
     try {
       const input = createMyPartnerSchema.parse(req.body ?? {});

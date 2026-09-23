@@ -5,6 +5,7 @@ import type { Cart, CartItem } from "../../../domain/order/cart.types.js";
 const safeCartSelect = {
   id: true,
   customerId: true,
+  guestSessionId: true,
   restaurantId: true,
   createdAt: true,
   updatedAt: true,
@@ -41,6 +42,34 @@ export class PrismaCartRepository implements CartRepository {
     return {
       id: cart.id,
       customerId: cart.customerId,
+      guestSessionId: cart.guestSessionId,
+      restaurantId: cart.restaurantId,
+      createdAt: cart.createdAt,
+      updatedAt: cart.updatedAt,
+      items: cart.items,
+    };
+  }
+
+  async findCartByGuestSession(guestSessionId: string): Promise<Cart | null> {
+    const cart = await this.db.cart.findUnique({
+      where: { guestSessionId },
+      select: {
+        ...safeCartSelect,
+        items: {
+          select: safeCartItemSelect,
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+
+    if (!cart) {
+      return null;
+    }
+
+    return {
+      id: cart.id,
+      customerId: cart.customerId,
+      guestSessionId: cart.guestSessionId,
       restaurantId: cart.restaurantId,
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
@@ -67,6 +96,7 @@ export class PrismaCartRepository implements CartRepository {
     return {
       id: cart.id,
       customerId: cart.customerId,
+      guestSessionId: cart.guestSessionId,
       restaurantId: cart.restaurantId,
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
@@ -74,13 +104,28 @@ export class PrismaCartRepository implements CartRepository {
     };
   }
 
-  async createCart(customerId: string, restaurantId: string | null): Promise<Cart> {
+  async createCart(
+    owner: { customerId?: string | null; guestSessionId?: string | null },
+    restaurantId: string | null
+  ): Promise<Cart> {
     const cart = await this.db.cart.create({
-      data: { customerId, restaurantId },
+      data: {
+        customerId: owner.customerId || null,
+        guestSessionId: owner.guestSessionId || null,
+        restaurantId,
+      },
       select: safeCartSelect,
     });
 
-    return { ...cart, items: [] };
+    return {
+      id: cart.id,
+      customerId: cart.customerId,
+      guestSessionId: cart.guestSessionId,
+      restaurantId: cart.restaurantId,
+      createdAt: cart.createdAt,
+      updatedAt: cart.updatedAt,
+      items: [],
+    };
   }
 
   async updateCartRestaurant(cartId: string, restaurantId: string | null): Promise<void> {
@@ -132,6 +177,7 @@ export class PrismaCartRepository implements CartRepository {
           select: {
             id: true,
             customerId: true,
+            guestSessionId: true,
           },
         },
       },
