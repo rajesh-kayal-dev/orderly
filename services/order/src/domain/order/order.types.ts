@@ -13,7 +13,23 @@ export type OrderStatus =
 
 export type PaymentStatus = "pending" | "paid" | "cancelled" | "refunded";
 
-export type PaymentMethod = "cod";
+export type PaymentMethod = "cod" | "online" | "vnpay" | "razorpay";
+
+export interface ContactInfoSnapshot {
+  fullName: string;
+  phoneNumber: string;
+  email?: string | null;
+}
+
+export interface DeliveryAddressSnapshot {
+  street: string;
+  landmark?: string | null;
+  city: string;
+  state?: string | null;
+  postalCode?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+}
 
 export interface OrderItem {
   id: string;
@@ -27,11 +43,14 @@ export interface OrderItem {
 
 export interface Order {
   id: string;
-  customerId: string;
+  customerId: string | null;
+  guestSessionId: string | null;
   restaurantId: string;
   deliveryAddressId: string | null;
-  deliveryAddress: unknown | null;
+  deliveryAddress: DeliveryAddressSnapshot | unknown | null;
+  contactInfo: ContactInfoSnapshot | unknown | null;
   notes: string | null;
+  idempotencyKey?: string | null;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod;

@@ -11,7 +11,8 @@ export interface CartItem {
 
 export interface Cart {
   id: string;
-  customerId: string;
+  customerId: string | null;
+  guestSessionId: string | null;
   restaurantId: string | null;
   createdAt: Date;
   updatedAt: Date;

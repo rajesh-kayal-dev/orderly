@@ -27,7 +27,7 @@ describe("prisma notification repository (real database)", () => {
       const adapter = new PrismaPg({ connectionString });
       db = new PrismaClient({ adapter });
       notifications = new PrismaNotificationRepository(db);
-      await db.$connect();
+      await db.$queryRaw`SELECT 1`;
       available = true;
     } catch {
       available = false;
@@ -35,8 +35,10 @@ describe("prisma notification repository (real database)", () => {
   });
 
   after(async () => {
-    if (db) {
-      await db.notification.deleteMany({ where: { id: { in: createdNotificationIds } } });
+    if (db && available) {
+      try {
+        await db.notification.deleteMany({ where: { id: { in: createdNotificationIds } } });
+      } catch {}
       await db.$disconnect();
     }
   });

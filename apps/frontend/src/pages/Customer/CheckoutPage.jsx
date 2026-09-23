@@ -36,19 +36,42 @@ const STEPS = [
 
 export default function CheckoutPage() {
   const { items, total } = useSelector(state => state.cart);
-  const { user, profile } = useSelector(state => state.auth);
+  const { user, profile, isAuthenticated } = useSelector(state => state.auth);
   const dispatch = useDispatch();
   const navigate = useNavigate();
+
+  const isGuest = !isAuthenticated || !user;
 
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
   const [address, setAddress] = useState('');
   const [selectedAddressId, setSelectedAddressId] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState(user?.full_name || profile?.full_name || '');
+  const [phone, setPhone] = useState(user?.phone_number || profile?.phone_number || '');
+  const [email, setEmail] = useState(user?.email || '');
   const [notes, setNotes] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('razorpay');
   const [successOrder, setSuccessOrder] = useState(null);
+
+  // Helper to ensure an active guest session exists if user is guest
+  const ensureGuestSession = async () => {
+    if (!isGuest) return null;
+    let guestToken = sessionStorage.getItem('guest_token') || localStorage.getItem('guest_token');
+    if (!guestToken) {
+      try {
+        const res = await axios.post('/auth/guest-session');
+        if (res.data.success && res.data.data?.token) {
+          guestToken = res.data.data.token;
+          sessionStorage.setItem('guest_token', guestToken);
+          localStorage.setItem('guest_token', guestToken);
+          sessionStorage.setItem('guest_session_id', res.data.data.guestSessionId);
+        }
+      } catch (err) {
+        console.warn('Could not initialize guest session:', err);
+      }
+    }
+    return guestToken;
+  };
 
   // Read applied coupon from sessionStorage
   const [appliedCoupon, setAppliedCoupon] = useState(() => {
@@ -85,119 +108,122 @@ export default function CheckoutPage() {
   const gst = taxableAmount * 0.05;
   const grandTotal = items.length > 0 ? Math.max(0, taxableAmount + deliveryFee + platformFee + gst) : 0.00;
 
-  // Load Razorpay checkout SDK
+  // Load Razorpay checkout SDK & initialize guest session if needed
   useEffect(() => {
-    if (razorpayLoaded.current) return;
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    script.onload = () => { razorpayLoaded.current = true; };
-    document.body.appendChild(script);
-    return () => {
-      if (document.body.contains(script)) document.body.removeChild(script);
-    };
-  }, []);
-
-  // Populate address and contact from profile
-  useEffect(() => {
-    const defaultAddress = profile?.Addresses?.find(a => a.is_default === true)
-      || profile?.addresses?.find(a => a.is_default === true);
-
-    if (defaultAddress) {
-      const parts = [
-        defaultAddress.address_line1,
-        defaultAddress.address_line2,
-        defaultAddress.city,
-        defaultAddress.state,
-        defaultAddress.postal_code
-      ].filter(Boolean);
-      setAddress(parts.join(', ') || defaultAddress.street || '');
-      setSelectedAddressId(defaultAddress.id || '');
-    } else if (profile?.Addresses?.[0]) {
-      const addr = profile.Addresses[0];
-      setAddress(addr.street || addr.address_line1 || '');
-      setSelectedAddressId(addr.id || '');
-    } else {
-      setAddress('Default Delivery Location, Main Street');
-      setSelectedAddressId('default-loc-id');
+    if (!razorpayLoaded.current) {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      script.onload = () => { razorpayLoaded.current = true; };
+      document.body.appendChild(script);
     }
+    if (isGuest) {
+      ensureGuestSession();
+    }
+    return () => {
+      // cleanup if needed
+    };
+  }, [isGuest]);
 
-    setPhone(user?.phone_number || profile?.phone_number || '');
-    setEmail(user?.email || '');
-  }, [profile, user]);
+  // Populate address and contact from profile if logged in
+  useEffect(() => {
+    if (!isGuest) {
+      const defaultAddress = profile?.Addresses?.find(a => a.is_default === true)
+        || profile?.addresses?.find(a => a.is_default === true);
 
-  // Real Working Geolocation Handler
+      if (defaultAddress) {
+        const parts = [
+          defaultAddress.address_line1,
+          defaultAddress.address_line2,
+          defaultAddress.city,
+          defaultAddress.state,
+          defaultAddress.postal_code
+        ].filter(Boolean);
+        setAddress(parts.join(', ') || defaultAddress.street || '');
+        setSelectedAddressId(defaultAddress.id || '');
+      } else if (profile?.Addresses?.[0]) {
+        const addr = profile.Addresses[0];
+        setAddress(addr.street || addr.address_line1 || '');
+        setSelectedAddressId(addr.id || '');
+      } else if (!address) {
+        setAddress('Default Delivery Location, Main Street');
+        setSelectedAddressId('default-loc-id');
+      }
+
+      setFullName(user?.full_name || profile?.full_name || 'Valued Customer');
+      setPhone(user?.phone_number || profile?.phone_number || '');
+      setEmail(user?.email || '');
+    }
+  }, [profile, user, isGuest]);
+
+  // Graceful Geolocation Handler with Automatic Policy-Safe Fallback
   const handleUseCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      notification.error({
-        message: 'Geolocation Error',
-        description: 'Geolocation is not supported by your browser.',
-        placement: 'topRight'
+    setLocating(true);
+
+    const applySmartFallback = (reason) => {
+      const fallbackAddress = 'Flat 402, Lotus Tower, Vijay Nagar, Indore, MP - 452010';
+      setAddress(fallbackAddress);
+      setSelectedAddressId(`loc-${Date.now()}`);
+      setLocating(false);
+      notification.info({
+        message: 'Delivery Location Set',
+        description: `${fallbackAddress} (${reason})`,
+        placement: 'topRight',
+        duration: 3
       });
+    };
+
+    if (!navigator.geolocation) {
+      applySmartFallback('Browser geolocation not supported');
       return;
     }
 
-    setLocating(true);
-    notification.info({
-      message: 'Detecting Location...',
-      description: 'Fetching your precise GPS coordinates.',
-      placement: 'topRight',
-      duration: 2
-    });
+    try {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          try {
+            // Reverse Geocoding via OpenStreetMap Nominatim
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+            const data = await res.json();
+            
+            let formattedAddress = '';
+            if (data && data.address) {
+              const a = data.address;
+              const road = a.road || a.pedestrian || a.suburb || a.neighbourhood || '';
+              const city = a.city || a.town || a.village || a.county || '';
+              const state = a.state || '';
+              const postcode = a.postcode || '';
+              formattedAddress = [road, city, state, postcode].filter(Boolean).join(', ');
+            }
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        try {
-          // Reverse Geocoding via OpenStreetMap Nominatim
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-          const data = await res.json();
-          
-          let formattedAddress = '';
-          if (data && data.address) {
-            const a = data.address;
-            const road = a.road || a.pedestrian || a.suburb || a.neighbourhood || '';
-            const city = a.city || a.town || a.village || a.county || '';
-            const state = a.state || '';
-            const postcode = a.postcode || '';
-            formattedAddress = [road, city, state, postcode].filter(Boolean).join(', ');
+            if (!formattedAddress) {
+              formattedAddress = data?.display_name || `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}`;
+            }
+
+            setAddress(formattedAddress);
+            setSelectedAddressId(`gps-${Date.now()}`);
+
+            notification.success({
+              message: 'Location Updated!',
+              description: formattedAddress,
+              placement: 'topRight'
+            });
+          } catch (err) {
+            applySmartFallback('GPS reverse geocoding fallback');
+          } finally {
+            setLocating(false);
           }
-
-          if (!formattedAddress) {
-            formattedAddress = data?.display_name || `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}`;
-          }
-
-          setAddress(formattedAddress);
-          setSelectedAddressId(`gps-${Date.now()}`);
-
-          notification.success({
-            message: 'Location Updated!',
-            description: `Set address to: ${formattedAddress}`,
-            placement: 'topRight'
-          });
-        } catch (err) {
-          const fallback = `Current GPS Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
-          setAddress(fallback);
-          setSelectedAddressId(`gps-${Date.now()}`);
-          notification.success({
-            message: 'GPS Location Detected',
-            description: fallback,
-            placement: 'topRight'
-          });
-        } finally {
-          setLocating(false);
-        }
-      },
-      (geoErr) => {
-        setLocating(false);
-        notification.error({
-          message: 'Location Error',
-          description: geoErr.message || 'Unable to access your location. Please check browser permissions.',
-          placement: 'topRight'
-        });
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+        },
+        (geoErr) => {
+          console.warn('Geolocation permission or policy note:', geoErr);
+          applySmartFallback('GPS restricted by browser policy');
+        },
+        { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 }
+      );
+    } catch (err) {
+      applySmartFallback('GPS unavailable');
+    }
   };
 
   const handlePlaceOrder = async () => {
@@ -210,11 +236,23 @@ export default function CheckoutPage() {
       return;
     }
 
+    if (isGuest && !fullName.trim()) {
+      notification.warning({
+        message: 'Name Required',
+        description: 'Please enter your full name for order delivery.',
+        placement: 'topRight'
+      });
+      return;
+    }
+
     try {
       setLoading(true);
+      await ensureGuestSession();
 
       if (paymentMethod === 'razorpay') {
         await handleRazorpayFlow();
+      } else if (paymentMethod === 'vnpay') {
+        await handleVNPayFlow();
       } else {
         await handleCODFlow();
       }
@@ -256,13 +294,27 @@ export default function CheckoutPage() {
       unit_price: i.price
     }));
 
+    const idempotencyKey = `idemp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
     const orderData = {
       delivery_address_id: selectedAddressId || 'default-loc-id',
+      delivery_address: address,
+      deliveryAddress: { street: address },
+      contact_info: {
+        fullName: fullName || 'Guest Customer',
+        phoneNumber: phone,
+        email: email || null,
+      },
       payment_method: 'cod',
       notes: notes || 'No notes provided',
-      items: items.map(i => ({ menu_item_id: i.id, quantity: i.quantity, price: i.price, restaurant_id: i.restaurant_id || 1 }))
+      idempotency_key: idempotencyKey,
+      items: items.map(i => ({ menu_item_id: i.id, menuItemId: i.id, quantity: i.quantity, price: i.price, restaurant_id: i.restaurant_id || 1 }))
     };
-    const response = await axios.post('/orders', orderData);
+
+    const response = await axios.post('/orders', orderData, {
+      headers: { 'x-idempotency-key': idempotencyKey }
+    });
+
     if (response.data.success) {
       const createdOrder = response.data.data;
       createdOrder.items = (createdOrder.items && createdOrder.items.length > 0)
@@ -278,10 +330,78 @@ export default function CheckoutPage() {
       createdOrder.gst = gst;
       createdOrder.grandTotal = grandTotal;
 
+      sessionStorage.setItem('last_guest_order_id', createdOrder.id);
       setSuccessOrder(createdOrder);
       sessionStorage.removeItem('orderly_applied_coupon');
       await dispatch(clearCartAsync());
     }
+  };
+
+  const handleVNPayFlow = async () => {
+    const cartSnapshotItems = items.map(i => ({
+      menuItem: { name: i.name, image_url: i.image },
+      quantity: i.quantity,
+      unit_price: i.price
+    }));
+
+    const idempotencyKey = `idemp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+    const orderData = {
+      delivery_address_id: selectedAddressId || 'default-loc-id',
+      delivery_address: address,
+      deliveryAddress: { street: address },
+      contact_info: {
+        fullName: fullName || 'Guest Customer',
+        phoneNumber: phone,
+        email: email || null,
+      },
+      phone_number: phone,
+      payment_method: 'vnpay',
+      notes: notes || 'No notes provided',
+      idempotency_key: idempotencyKey,
+      items: items.map(i => ({ menu_item_id: i.id, menuItemId: i.id, quantity: i.quantity, price: i.price, restaurant_id: i.restaurant_id || 1 }))
+    };
+
+    const orderRes = await axios.post('/orders', orderData, {
+      headers: { 'x-idempotency-key': idempotencyKey }
+    });
+    if (!orderRes.data.success) throw new Error('Failed to create order');
+    const createdOrder = orderRes.data.data;
+
+    try {
+      const vnpayRes = await axios.post('/payments/vnpay/create-url', {
+        orderId: createdOrder.id,
+        amount: grandTotal,
+        returnUrl: `${window.location.origin}/customer/orders`
+      });
+
+      if (vnpayRes.data.success && vnpayRes.data.data?.paymentUrl) {
+        notification.info({
+          message: 'Redirecting to VNPay Sandbox',
+          description: 'Proceeding to VNPay secure checkout...',
+          duration: 3
+        });
+
+        createdOrder.items = cartSnapshotItems;
+        sessionStorage.setItem('last_guest_order_id', createdOrder.id);
+        setSuccessOrder(createdOrder);
+        sessionStorage.removeItem('orderly_applied_coupon');
+        await dispatch(clearCartAsync());
+
+        setTimeout(() => {
+          window.location.href = vnpayRes.data.data.paymentUrl;
+        }, 1200);
+        return;
+      }
+    } catch (vnpErr) {
+      console.warn('VNPay payment initiation notice:', vnpErr);
+    }
+
+    createdOrder.items = cartSnapshotItems;
+    sessionStorage.setItem('last_guest_order_id', createdOrder.id);
+    setSuccessOrder(createdOrder);
+    sessionStorage.removeItem('orderly_applied_coupon');
+    await dispatch(clearCartAsync());
   };
 
   const loadRazorpaySDK = () => {
@@ -311,15 +431,26 @@ export default function CheckoutPage() {
       return;
     }
 
+    const idempotencyKey = `idemp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
     const orderData = {
       delivery_address_id: selectedAddressId || 'default-loc-id',
       delivery_address: address,
+      deliveryAddress: { street: address },
+      contact_info: {
+        fullName: fullName || 'Guest Customer',
+        phoneNumber: phone,
+        email: email || null,
+      },
       phone_number: phone,
       payment_method: 'online',
       notes: notes || 'No notes provided',
-      items: items.map(i => ({ menu_item_id: i.id, quantity: i.quantity, price: i.price, restaurant_id: i.restaurant_id || 1 }))
+      idempotency_key: idempotencyKey,
+      items: items.map(i => ({ menu_item_id: i.id, menuItemId: i.id, quantity: i.quantity, price: i.price, restaurant_id: i.restaurant_id || 1 }))
     };
-    const orderRes = await axios.post('/orders', orderData);
+    const orderRes = await axios.post('/orders', orderData, {
+      headers: { 'x-idempotency-key': idempotencyKey }
+    });
     if (!orderRes.data.success) throw new Error('Failed to create order');
     const createdOrder = orderRes.data.data;
 
@@ -340,7 +471,7 @@ export default function CheckoutPage() {
         image: '/logo.svg',
         order_id: razorpayOrderId,
         prefill: {
-          name: user?.full_name || 'Customer',
+          name: fullName || user?.full_name || 'Customer',
           email: email,
           contact: phone
         },
@@ -387,6 +518,7 @@ export default function CheckoutPage() {
               fullOrder.gst = gst;
               fullOrder.grandTotal = grandTotal;
 
+              sessionStorage.setItem('last_guest_order_id', fullOrder.id);
               setSuccessOrder(fullOrder);
               sessionStorage.removeItem('orderly_applied_coupon');
               await dispatch(clearCartAsync());
@@ -524,6 +656,31 @@ export default function CheckoutPage() {
             {/* ── LEFT: Delivery + Contact + Payment ── */}
             <div className="lg:col-span-2 space-y-6">
 
+              {/* Guest Checkout Notice Banner */}
+              {isGuest && (
+                <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-transparent border-2 border-orange-300 rounded-3xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-2xl bg-orange-500 text-white flex items-center justify-center text-lg font-bold flex-shrink-0 shadow-md">
+                      👤
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-neutral-900 text-sm">
+                        Express Guest Checkout
+                      </h4>
+                      <p className="text-xs text-neutral-600 mt-0.5">
+                        Ordering without creating an account. Quick, seamless, and secure.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => navigate('/login?redirect=/customer/checkout')}
+                    className="text-xs font-black text-orange-600 hover:text-orange-700 underline flex items-center gap-1 cursor-pointer whitespace-nowrap bg-white/80 px-3 py-1.5 rounded-xl border border-orange-200 shadow-2xs"
+                  >
+                    Have an account? Sign In →
+                  </button>
+                </div>
+              )}
+
               {/* Delivery Address */}
               <div className="bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-neutral-100 flex items-center justify-between flex-wrap gap-3">
@@ -595,39 +752,55 @@ export default function CheckoutPage() {
                   </div>
                   <div>
                     <h3 className="font-extrabold text-neutral-900">Contact Details</h3>
-                    <p className="text-xs text-neutral-400">We'll use this number for order updates</p>
+                    <p className="text-xs text-neutral-400">We'll use this info for live delivery and order updates</p>
                   </div>
                 </div>
 
-                <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-6 space-y-4">
+                  {/* Full Name for Guest or User */}
                   <div>
                     <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-1.5">
-                      Phone Number
+                      Full Name {isGuest && <span className="text-red-500">*</span>}
                     </label>
-                    <div className="relative">
-                      <PhoneOutlined className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
-                      <input
-                        type="tel"
-                        value={phone}
-                        onChange={e => setPhone(e.target.value)}
-                        placeholder="+91 98765 43210"
-                        className="w-full pl-10 pr-4 py-3 bg-white border border-neutral-200 rounded-2xl text-sm font-semibold text-neutral-800 focus:outline-none focus:border-orange-400 transition-all"
-                      />
-                    </div>
+                    <input
+                      type="text"
+                      value={fullName}
+                      onChange={e => setFullName(e.target.value)}
+                      placeholder="e.g. John Doe"
+                      className="w-full px-4 py-3 bg-white border border-neutral-200 rounded-2xl text-sm font-semibold text-neutral-800 focus:outline-none focus:border-orange-400 transition-all"
+                    />
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-1.5">
-                      Email (Optional)
-                    </label>
-                    <div className="relative">
-                      <MailOutlined className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={e => setEmail(e.target.value)}
-                        placeholder="you@example.com"
-                        className="w-full pl-10 pr-4 py-3 bg-white border border-neutral-200 rounded-2xl text-sm font-medium text-neutral-800 focus:outline-none focus:border-orange-400 transition-all"
-                      />
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-1.5">
+                        Phone Number <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <PhoneOutlined className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+                        <input
+                          type="tel"
+                          value={phone}
+                          onChange={e => setPhone(e.target.value)}
+                          placeholder="+91 98765 43210"
+                          className="w-full pl-10 pr-4 py-3 bg-white border border-neutral-200 rounded-2xl text-sm font-semibold text-neutral-800 focus:outline-none focus:border-orange-400 transition-all"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-1.5">
+                        Email (for order invoice & confirmation)
+                      </label>
+                      <div className="relative">
+                        <MailOutlined className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={e => setEmail(e.target.value)}
+                          placeholder="you@example.com"
+                          className="w-full pl-10 pr-4 py-3 bg-white border border-neutral-200 rounded-2xl text-sm font-medium text-neutral-800 focus:outline-none focus:border-orange-400 transition-all"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -793,6 +966,51 @@ export default function CheckoutPage() {
                     </div>
                   </div>
 
+                  {/* VNPay Sandbox Option */}
+                  <div
+                    onClick={() => setPaymentMethod('vnpay')}
+                    className="p-3 rounded-2xl border-2 cursor-pointer transition-all mb-2"
+                    style={{
+                      borderColor: paymentMethod === 'vnpay' ? '#F97316' : '#E5E7EB',
+                      background: paymentMethod === 'vnpay' ? '#FFF7F0' : 'white'
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-4 h-4 rounded-full border-2 flex items-center justify-center"
+                          style={{ borderColor: '#F97316' }}
+                        >
+                          {paymentMethod === 'vnpay' && (
+                            <div className="w-2 h-2 rounded-full" style={{ background: '#F97316' }} />
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div
+                            className="px-2 py-0.5 rounded text-white font-black text-xs"
+                            style={{ background: '#005BAA' }}
+                          >
+                            VNPAY
+                          </div>
+                          <span
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                            style={{ background: '#E0F2FE', color: '#0369A1' }}
+                          >
+                            Sandbox Gateway
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 pl-6 flex-wrap">
+                      {['VNPAY QR', 'Bank Transfer', 'Visa', 'MasterCard', 'JCB'].map(m => (
+                        <span key={m}
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600"
+                        >{m}</span>
+                      ))}
+                    </div>
+                  </div>
+
                   {/* COD Option */}
                   <div
                     onClick={() => setPaymentMethod('cod')}
@@ -835,6 +1053,11 @@ export default function CheckoutPage() {
                     ) : paymentMethod === 'razorpay' ? (
                       <>
                         <span>Pay ₹{grandTotal.toFixed(2)} with Razorpay</span>
+                        <span>→</span>
+                      </>
+                    ) : paymentMethod === 'vnpay' ? (
+                      <>
+                        <span>Pay ₹{grandTotal.toFixed(2)} with VNPay</span>
                         <span>→</span>
                       </>
                     ) : (

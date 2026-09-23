@@ -29,7 +29,7 @@ describe("prisma delivery repositories (real database)", () => {
       db = new PrismaClient({ adapter });
       deliveries = new PrismaDeliveryRepository(db);
       partners = new PrismaDeliveryPartnerRepository(db);
-      await db.$connect();
+      await db.$queryRaw`SELECT 1`;
       available = true;
     } catch {
       available = false;
@@ -37,9 +37,11 @@ describe("prisma delivery repositories (real database)", () => {
   });
 
   after(async () => {
-    if (db) {
-      await db.delivery.deleteMany({ where: { id: { in: createdDeliveryIds } } });
-      await db.deliveryPartner.deleteMany({ where: { id: { in: createdPartnerIds } } });
+    if (db && available) {
+      try {
+        await db.delivery.deleteMany({ where: { id: { in: createdDeliveryIds } } });
+        await db.deliveryPartner.deleteMany({ where: { id: { in: createdPartnerIds } } });
+      } catch {}
       await db.$disconnect();
     }
   });

@@ -19,7 +19,8 @@ import {
   CarOutlined,
   SmileOutlined,
   SafetyCertificateOutlined,
-  HeartOutlined
+  HeartOutlined,
+  UserOutlined
 } from '@ant-design/icons';
 import BrandLogo from '../../components/common/BrandLogo';
 
@@ -33,6 +34,32 @@ export default function Login() {
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
+
+  const handleContinueAsGuest = async () => {
+    try {
+      setGuestLoading(true);
+      let guestToken = sessionStorage.getItem('guest_token') || localStorage.getItem('guest_token');
+      if (!guestToken) {
+        const res = await axios.post('/auth/guest-session');
+        if (res.data.success && res.data.data?.token) {
+          guestToken = res.data.data.token;
+          sessionStorage.setItem('guest_token', guestToken);
+          localStorage.setItem('guest_token', guestToken);
+          if (res.data.data.guestSessionId) {
+            sessionStorage.setItem('guest_session_id', res.data.data.guestSessionId);
+          }
+        }
+      }
+      dispatch(fetchCart());
+      navigate('/customer');
+    } catch (err) {
+      console.warn('Guest session creation notice:', err);
+      navigate('/customer');
+    } finally {
+      setGuestLoading(false);
+    }
+  };
 
   const handleRedirect = (role) => {
     switch (role.toLowerCase()) {
@@ -45,7 +72,13 @@ export default function Login() {
   };
 
   const handleGoogleLogin = () => {
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+    const isCloudPreview =
+      typeof window !== 'undefined' &&
+      (window.location.port === '3000' ||
+        window.location.hostname.includes('.run.app') ||
+        window.location.hostname.includes('googleusercontent') ||
+        window.location.hostname.includes('ais-'));
+    const apiUrl = isCloudPreview ? '/api' : (import.meta.env.VITE_API_URL || '/api');
     window.location.href = `${apiUrl}/auth/google`;
   };
 
@@ -153,9 +186,17 @@ export default function Login() {
                 setError('');
                 const response = await axios.post('/auth/login', values);
                 const { data } = response.data;
+                const userObj = data.user || {
+                  id: data.id,
+                  email: data.email,
+                  role: data.role,
+                  full_name: data.full_name,
+                  phone_number: data.phone_number
+                };
+                const userRole = (userObj.role || data.role || 'customer').toLowerCase();
                 let profileData = data.profile;
 
-                if (data.role.toLowerCase() === 'restaurant' && !profileData) {
+                if (userRole === 'restaurant' && !profileData) {
                   try {
                     const profileRes = await axios.get('/restaurants/my-profile', {
                       headers: { Authorization: `Bearer ${data.token}` }
@@ -165,7 +206,7 @@ export default function Login() {
                     if (profileErr.response?.status === 404) {
                       try {
                         const createRes = await axios.post('/restaurants', {
-                          name: data.full_name + "'s Restaurant"
+                          name: (userObj.full_name || 'My') + "'s Restaurant"
                         }, { headers: { Authorization: `Bearer ${data.token}` } });
                         profileData = createRes.data.data;
                       } catch (createErr) {
@@ -176,30 +217,24 @@ export default function Login() {
                 }
 
                 dispatch(loginSuccess({
-                  user: { 
-                    id: data.id,
-                    email: data.email, 
-                    role: data.role,
-                    full_name: data.full_name,
-                    phone_number: data.phone_number
-                  },
-                  profile: profileData,
+                  user: userObj,
+                  profile: data.profile || profileData,
                   token: data.token
                 }));
 
-                if (data.role.toLowerCase() === 'customer') {
+                if (userRole === 'customer') {
                   dispatch(fetchCart());
                 }
 
-                handleRedirect(data.role);
+                handleRedirect(userRole);
               } catch (err) {
-                setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+                setError(err.response?.data?.message || 'Login failed. Please check your credentials or use the demo buttons below.');
                 setSubmitting(false);
               }
             }}
           >
-            {({ isSubmitting }) => (
-              <Form className="space-y-3.5 flex-1 flex flex-col justify-center">
+            {({ isSubmitting, setFieldValue }) => (
+              <Form className="space-y-3 flex-1 flex flex-col justify-center">
                 <div>
                   <div className="auth-input-container">
                     <MailOutlined className="auth-input-icon" />
@@ -252,6 +287,64 @@ export default function Login() {
                   )}
                 </button>
 
+                {/* Quick Demo Credentials Fillers */}
+                <div className="bg-orange-50/60 p-2.5 rounded-2xl border border-orange-100/80">
+                  <div className="text-[10px] font-bold text-orange-800/80 uppercase tracking-wider text-center mb-1.5 flex items-center justify-center gap-1">
+                    <span>⚡ Quick Demo Logins</span>
+                    <span className="text-[9px] font-normal text-orange-600">(Password: password123)</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFieldValue('email', 'rajeshkayal8001@gmail.com');
+                        setFieldValue('password', 'password123');
+                        setError('');
+                      }}
+                      className="py-1.5 px-2 bg-white hover:bg-orange-100/50 border border-orange-200/90 text-orange-900 text-[11px] font-semibold rounded-xl text-center transition-all cursor-pointer shadow-xs truncate"
+                      title="Rajesh Kayal (Customer)"
+                    >
+                      👤 Rajesh Kayal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFieldValue('email', 'customer@ofds.com');
+                        setFieldValue('password', 'password123');
+                        setError('');
+                      }}
+                      className="py-1.5 px-2 bg-white hover:bg-emerald-50 border border-emerald-200/90 text-emerald-900 text-[11px] font-semibold rounded-xl text-center transition-all cursor-pointer shadow-xs truncate"
+                      title="Customer Demo"
+                    >
+                      🛍️ Customer Demo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFieldValue('email', 'restaurant@ofds.com');
+                        setFieldValue('password', 'password123');
+                        setError('');
+                      }}
+                      className="py-1.5 px-2 bg-white hover:bg-amber-50 border border-amber-200/90 text-amber-900 text-[11px] font-semibold rounded-xl text-center transition-all cursor-pointer shadow-xs truncate"
+                      title="Restaurant Demo"
+                    >
+                      🍳 Restaurant Demo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFieldValue('email', 'driver@ofds.com');
+                        setFieldValue('password', 'password123');
+                        setError('');
+                      }}
+                      className="py-1.5 px-2 bg-white hover:bg-sky-50 border border-sky-200/90 text-sky-900 text-[11px] font-semibold rounded-xl text-center transition-all cursor-pointer shadow-xs truncate"
+                      title="Driver Demo"
+                    >
+                      🛵 Driver Demo
+                    </button>
+                  </div>
+                </div>
+
                 <div className="relative my-3">
                   <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-gray-200/80"></div>
@@ -264,15 +357,36 @@ export default function Login() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <button type="button" onClick={handleGoogleLogin} className="auth-social-btn">
+                  <button type="button" onClick={handleGoogleLogin} className="auth-social-btn flex-1">
                     <GoogleOutlined className="text-red-500 text-base" /> 
                     <span>Google</span>
                   </button>
-                  <button type="button" className="auth-social-btn">
+                  <button type="button" className="auth-social-btn flex-1">
                     <FacebookFilled className="text-blue-600 text-base" /> 
                     <span>Facebook</span>
                   </button>
                 </div>
+
+                {/* Continue as Guest Action Button */}
+                <button
+                  type="button"
+                  onClick={handleContinueAsGuest}
+                  disabled={guestLoading}
+                  className="w-full flex items-center justify-between py-2.5 px-4 bg-orange-50/80 hover:bg-orange-100/90 text-orange-700 font-bold rounded-2xl border border-orange-200/80 transition-all shadow-[0_2px_8px_rgba(249,115,22,0.08)] hover:shadow-md active:scale-[0.99] text-xs sm:text-sm group mt-1"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-6 h-6 rounded-full bg-orange-500 text-white flex items-center justify-center text-xs shadow-sm">
+                      <UserOutlined />
+                    </span>
+                    <span className="font-semibold text-gray-800 group-hover:text-orange-600 transition-colors">
+                      {guestLoading ? 'Starting Guest Session...' : 'Continue as Guest'}
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-medium text-orange-600/90 group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
+                    <span>Explore Menu</span>
+                    <ArrowRightOutlined className="text-[10px]" />
+                  </span>
+                </button>
 
                 <div className="text-center pt-2 text-xs text-gray-500 font-medium space-y-1">
                   <div>

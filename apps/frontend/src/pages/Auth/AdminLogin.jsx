@@ -80,25 +80,20 @@ export default function AdminLogin() {
             try {
               setError('');
               const response = await axios.post('/auth/login', values);
-              const { data } = response.data;
+              const authData = response.data.data;
+              const userObj = authData.user || authData;
 
               // Strictly enforce admin role verification
-              if (data.role?.toLowerCase() !== 'admin') {
+              if (userObj.role?.toLowerCase() !== 'admin') {
                 setError('Access Denied: Admin privileges required to access this portal.');
                 setSubmitting(false);
                 return;
               }
 
               dispatch(loginSuccess({
-                user: {
-                  id: data.id,
-                  email: data.email,
-                  role: data.role,
-                  full_name: data.full_name,
-                  phone_number: data.phone_number
-                },
-                profile: data.profile,
-                token: data.token
+                user: userObj,
+                profile: authData.profile,
+                token: authData.token
               }));
 
               navigate('/admin', { replace: true });

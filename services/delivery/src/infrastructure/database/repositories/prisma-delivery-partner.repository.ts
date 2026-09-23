@@ -91,6 +91,14 @@ export class PrismaDeliveryPartnerRepository implements DeliveryPartnerRepositor
     return partner ? toDeliveryPartner(partner) : null;
   }
 
+  async findAll(): Promise<DeliveryPartner[]> {
+    const partners = await this.db.deliveryPartner.findMany({
+      select: safeDeliveryPartnerSelect,
+      orderBy: { rating: "desc" },
+    });
+    return partners.map(toDeliveryPartner);
+  }
+
   async update(id: string, data: UpdateDeliveryPartnerData): Promise<DeliveryPartner | null> {
     const existing = await this.db.deliveryPartner.findUnique({
       where: { id },

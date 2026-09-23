@@ -1,5 +1,5 @@
 import type { Decimal } from "decimal.js";
-import type { Order, OrderItem, OrderStatus, PaymentStatus } from "./order.types.js";
+import type { ContactInfoSnapshot, DeliveryAddressSnapshot, Order, OrderItem, OrderStatus, PaymentMethod, PaymentStatus } from "./order.types.js";
 
 export interface CreateOrderItemData {
   menuItemId: string;
@@ -10,11 +10,15 @@ export interface CreateOrderItemData {
 }
 
 export interface CreateOrderData {
-  customerId: string;
+  customerId?: string | null;
+  guestSessionId?: string | null;
   restaurantId: string;
-  deliveryAddressId: string | null;
-  deliveryAddress: unknown | null;
-  notes: string | null;
+  deliveryAddressId?: string | null;
+  deliveryAddress?: DeliveryAddressSnapshot | unknown | null;
+  contactInfo?: ContactInfoSnapshot | unknown | null;
+  notes?: string | null;
+  idempotencyKey?: string | null;
+  paymentMethod?: PaymentMethod;
   subtotal: Decimal;
   deliveryFee: Decimal;
   totalAmount: Decimal;
@@ -34,7 +38,9 @@ export interface ListOrdersResult {
 export interface OrderRepository {
   createOrder(data: CreateOrderData): Promise<Order>;
   findOrderById(id: string): Promise<Order | null>;
+  findOrderByIdempotencyKey(key: string): Promise<Order | null>;
   listOrdersByCustomer(customerId: string, params: ListOrdersParams): Promise<ListOrdersResult>;
+  listOrdersByGuestSession(guestSessionId: string, params: ListOrdersParams): Promise<ListOrdersResult>;
   listOrdersByRestaurant(restaurantId: string, params: ListOrdersParams): Promise<ListOrdersResult>;
   updateOrderStatus(id: string, status: OrderStatus): Promise<Order | null>;
   updateOrderPaymentStatus(id: string, paymentStatus: PaymentStatus): Promise<Order | null>;

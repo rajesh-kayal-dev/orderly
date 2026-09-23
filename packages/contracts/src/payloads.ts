@@ -2,7 +2,8 @@ import { EventTypes, type EventType } from "./event-types.js";
 
 export interface OrderPlacedPayload {
   orderId: string;
-  customerId: string;
+  customerId?: string | null;
+  guestSessionId?: string | null;
   restaurantId: string;
   subtotal: string;
   deliveryFee: string;
@@ -11,6 +12,11 @@ export interface OrderPlacedPayload {
   paymentMethod: string;
   paymentStatus: string;
   createdAt: string;
+  contactInfo?: {
+    fullName: string;
+    phoneNumber: string;
+    email?: string | null;
+  } | null;
 }
 
 export interface OrderAcceptedPayload {

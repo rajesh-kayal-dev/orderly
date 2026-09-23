@@ -38,11 +38,6 @@ export default function AdminLayout() {
 
   const notificationRef = useRef(null);
 
-  // Security guard: redirect if not admin
-  if (!isAuthenticated || user?.role?.toLowerCase() !== 'admin') {
-    return <Link to="/admin/login" replace />;
-  }
-
   // Close notification popover on outside click
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -89,6 +84,11 @@ export default function AdminLayout() {
       };
     }
   }, [user]);
+
+  // Security guard: redirect if not admin
+  if (!isAuthenticated || user?.role?.toLowerCase() !== 'admin') {
+    return <Link to="/admin/login" replace />;
+  }
 
   const handleLogout = () => {
     dispatch(logout());

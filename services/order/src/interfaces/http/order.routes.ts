@@ -9,7 +9,7 @@ import type { OrderRepository } from "../../domain/order/order.repository.js";
 import type { MenuCatalogClient } from "../../domain/menu-catalog/menu-catalog.client.js";
 import type { TokenVerifier } from "../../infrastructure/security/token.js";
 import { mapErrorToResponse } from "./error-handler.js";
-import { requireAuth, type AuthenticatedRequest } from "./middleware/auth.middleware.js";
+import { requireActor, type AuthenticatedActorRequest } from "./middleware/auth.middleware.js";
 import {
   createOrderSchema,
   listOrdersQuerySchema,
@@ -37,42 +37,70 @@ export const createOrderRouter = ({
   const getOrderUseCase = getOrder(orderRepository);
   const listCustomerOrdersUseCase = listCustomerOrders(orderRepository);
   const cancelOrderUseCase = cancelOrder(orderRepository, eventPublisher);
-  const requireAuthMiddleware = requireAuth({ verifyAccessToken: tokenVerifier.verify });
+  const requireActorMiddleware = requireActor({ verifyAccessToken: tokenVerifier.verify });
 
-  router.post("/", requireAuthMiddleware, async (req, res) => {
+  router.post("/", requireActorMiddleware, async (req, res) => {
     try {
       const input = createOrderSchema.parse(req.body);
-      const order = await createOrderUseCase((req as AuthenticatedRequest).userId, input);
+      const actorReq = req as AuthenticatedActorRequest;
+      const order = await createOrderUseCase(
+        {
+          customerId: actorReq.userId,
+          guestSessionId: actorReq.guestSessionId,
+        },
+        input
+      );
       return void res.status(201).json({ success: true, data: order });
     } catch (error) {
       return void mapErrorToResponse(res, error);
     }
   });
 
-  router.get("/", requireAuthMiddleware, async (req, res) => {
+  router.get("/", requireActorMiddleware, async (req, res) => {
     try {
       const query = listOrdersQuerySchema.parse(req.query);
-      const result = await listCustomerOrdersUseCase((req as AuthenticatedRequest).userId, query);
+      const actorReq = req as AuthenticatedActorRequest;
+      const result = await listCustomerOrdersUseCase(
+        {
+          customerId: actorReq.userId,
+          guestSessionId: actorReq.guestSessionId,
+        },
+        query
+      );
       return void res.status(200).json({ success: true, data: result.orders, total: result.total });
     } catch (error) {
       return void mapErrorToResponse(res, error);
     }
   });
 
-  router.get("/:id", requireAuthMiddleware, async (req, res) => {
+  router.get("/:id", requireActorMiddleware, async (req, res) => {
     try {
       const { id } = orderIdParamsSchema.parse(req.params);
-      const order = await getOrderUseCase((req as AuthenticatedRequest).userId, id);
+      const actorReq = req as AuthenticatedActorRequest;
+      const order = await getOrderUseCase(
+        {
+          customerId: actorReq.userId,
+          guestSessionId: actorReq.guestSessionId,
+        },
+        id
+      );
       return void res.status(200).json({ success: true, data: order });
     } catch (error) {
       return void mapErrorToResponse(res, error);
     }
   });
 
-  router.put("/:id/cancel", requireAuthMiddleware, async (req, res) => {
+  router.put("/:id/cancel", requireActorMiddleware, async (req, res) => {
     try {
       const { id } = orderIdParamsSchema.parse(req.params);
-      const order = await cancelOrderUseCase((req as AuthenticatedRequest).userId, id);
+      const actorReq = req as AuthenticatedActorRequest;
+      const order = await cancelOrderUseCase(
+        {
+          customerId: actorReq.userId,
+          guestSessionId: actorReq.guestSessionId,
+        },
+        id
+      );
       return void res.status(200).json({ success: true, data: order });
     } catch (error) {
       return void mapErrorToResponse(res, error);

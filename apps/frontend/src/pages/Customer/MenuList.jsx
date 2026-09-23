@@ -14,7 +14,10 @@ import {
 const categoriesList = [
   { id: 'All', name: 'All Items' },
   { id: 'Burgers', name: 'Burgers' },
+  { id: 'Sides', name: 'Sides' },
   { id: 'Pizza', name: 'Pizza' },
+  { id: 'Biryani', name: 'Biryani' },
+  { id: 'North Indian', name: 'North Indian' },
   { id: 'Sushi', name: 'Sushi' },
   { id: 'Asian', name: 'Asian' },
   { id: 'Healthy', name: 'Healthy' },
@@ -45,7 +48,7 @@ export default function MenuList() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
-  const [maxPrice, setMaxPrice] = useState(100);
+  const [maxPrice, setMaxPrice] = useState(500);
 
   useEffect(() => {
     const fetchMenuItems = async () => {
@@ -192,14 +195,14 @@ export default function MenuList() {
               <input 
                 type="range" 
                 min="0" 
-                max="100" 
+                max="500" 
                 value={maxPrice}
                 onChange={(e) => setMaxPrice(Number(e.target.value))}
                 className="w-full h-2 bg-neutral-200 rounded-lg appearance-none cursor-pointer accent-orange-600"
               />
               <div className="flex justify-between text-xs text-neutral-500 mt-2 font-medium">
-                <span>$0</span>
-                <span>${maxPrice >= 100 ? '100+' : maxPrice}</span>
+                <span>₹0</span>
+                <span>₹{maxPrice >= 500 ? '500+' : maxPrice}</span>
               </div>
             </div>
           </aside>
