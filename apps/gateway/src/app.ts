@@ -313,6 +313,132 @@ async function syncFromDatabase() {
     } catch (fbErr: any) {
       console.warn("[Neon DB Feedback Sync] Notice:", fbErr.message);
     }
+
+    // 4. Ensure MenuCategory, MenuItem, and Order tables exist and sync all records
+    try {
+      await dbPool.query(`
+        CREATE TABLE IF NOT EXISTS "MenuCategory" (
+          id VARCHAR(64) PRIMARY KEY,
+          restaurant_id VARCHAR(64) NOT NULL,
+          name VARCHAR(128) NOT NULL,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS "MenuItem" (
+          id VARCHAR(64) PRIMARY KEY,
+          restaurant_id VARCHAR(64) NOT NULL,
+          category VARCHAR(128),
+          name VARCHAR(255) NOT NULL,
+          description TEXT,
+          price NUMERIC(10, 2) NOT NULL DEFAULT 0,
+          image TEXT,
+          is_available BOOLEAN DEFAULT true,
+          is_veg BOOLEAN DEFAULT false,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS "Order" (
+          id VARCHAR(64) PRIMARY KEY,
+          customer_id VARCHAR(64) NOT NULL,
+          guest_session_id VARCHAR(64),
+          restaurant_id VARCHAR(64) NOT NULL,
+          delivery_partner_id VARCHAR(64),
+          status VARCHAR(64) NOT NULL DEFAULT 'placed',
+          delivery_address TEXT,
+          notes TEXT,
+          subtotal NUMERIC(10, 2) DEFAULT 0,
+          discount_amount NUMERIC(10, 2) DEFAULT 0,
+          coupon_code VARCHAR(64),
+          delivery_fee NUMERIC(10, 2) DEFAULT 0,
+          platform_fee NUMERIC(10, 2) DEFAULT 0,
+          tax NUMERIC(10, 2) DEFAULT 0,
+          total NUMERIC(10, 2) DEFAULT 0,
+          payment_status VARCHAR(64) DEFAULT 'pending',
+          payment_method VARCHAR(64) DEFAULT 'online',
+          contact_info JSONB,
+          items JSONB,
+          version INT DEFAULT 1,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+      `);
+
+      // Sync Categories
+      const resCats = await dbPool.query(`SELECT id, restaurant_id, name FROM "MenuCategory";`);
+      if (resCats.rows.length === 0) {
+        for (const cat of categories) {
+          await persistMenuCategoryToDb(cat);
+        }
+      } else {
+        for (const row of resCats.rows) {
+          if (!categories.some((c) => c.id === row.id)) {
+            categories.push({ id: row.id, restaurant_id: row.restaurant_id, name: row.name });
+          }
+        }
+      }
+
+      // Sync Menu Items
+      const resItems = await dbPool.query(`SELECT * FROM "MenuItem" ORDER BY created_at DESC;`);
+      if (resItems.rows.length === 0) {
+        for (const it of menuItems) {
+          await persistMenuItemToDb(it);
+        }
+      } else {
+        for (const row of resItems.rows) {
+          const existIdx = menuItems.findIndex((m) => m.id === row.id);
+          const itemObj: MenuItemRecord = {
+            id: row.id,
+            restaurant_id: row.restaurant_id,
+            name: row.name,
+            description: row.description || "",
+            price: Number(row.price || 0),
+            category: row.category || "General",
+            image: row.image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500",
+            is_available: row.is_available !== false,
+            is_veg: Boolean(row.is_veg),
+          };
+          if (existIdx >= 0) {
+            menuItems[existIdx] = itemObj;
+          } else {
+            menuItems.unshift(itemObj);
+          }
+        }
+      }
+      console.log(`[Neon DB Sync] Synced ${menuItems.length} menu items from Neon PostgreSQL.`);
+
+      // Sync Orders
+      const resOrders = await dbPool.query(`SELECT * FROM "Order" ORDER BY created_at DESC LIMIT 500;`);
+      for (const row of resOrders.rows) {
+        if (!orders.some((o) => o.id === row.id)) {
+          orders.push({
+            id: row.id,
+            customer_id: row.customer_id,
+            guest_session_id: row.guest_session_id,
+            restaurant_id: row.restaurant_id,
+            delivery_partner_id: row.delivery_partner_id,
+            status: row.status,
+            delivery_address: row.delivery_address,
+            notes: row.notes || "",
+            subtotal: Number(row.subtotal || 0),
+            discount_amount: Number(row.discount_amount || 0),
+            coupon_code: row.coupon_code,
+            delivery_fee: Number(row.delivery_fee || 0),
+            platform_fee: Number(row.platform_fee || 0),
+            tax: Number(row.tax || 0),
+            total: Number(row.total || 0),
+            payment_status: row.payment_status,
+            payment_method: row.payment_method,
+            contact_info: typeof row.contact_info === "string" ? JSON.parse(row.contact_info) : row.contact_info,
+            items: typeof row.items === "string" ? JSON.parse(row.items) : (row.items || []),
+            version: row.version || 1,
+            created_at: row.created_at?.toISOString ? row.created_at.toISOString() : String(row.created_at),
+            updated_at: row.updated_at?.toISOString ? row.updated_at.toISOString() : String(row.updated_at),
+          });
+        }
+      }
+      console.log(`[Neon DB Sync] Synced ${resOrders.rows.length} orders from Neon PostgreSQL.`);
+    } catch (mErr: any) {
+      console.warn("[Neon DB Menu & Order Sync] Notice:", mErr.message);
+    }
   } catch (err: any) {
     console.warn(`[Neon DB Sync] Notice: ${err.message}`);
   }
@@ -417,6 +543,22 @@ const restaurants: RestaurantRecord[] = [
   },
 ];
 
+interface MenuCategoryRecord {
+  id: string;
+  restaurant_id: string;
+  name: string;
+}
+
+const categories: MenuCategoryRecord[] = [
+  { id: "cat-burgers", restaurant_id: "1", name: "Burgers" },
+  { id: "cat-sides", restaurant_id: "1", name: "Sides" },
+  { id: "cat-pizza", restaurant_id: "2", name: "Pizza" },
+  { id: "cat-biryani", restaurant_id: "3", name: "Biryani" },
+  { id: "cat-starters", restaurant_id: "1", name: "Starters" },
+  { id: "cat-beverages", restaurant_id: "1", name: "Beverages" },
+  { id: "cat-desserts", restaurant_id: "1", name: "Desserts" },
+];
+
 interface MenuItemRecord {
   id: string;
   restaurant_id: string;
@@ -427,6 +569,125 @@ interface MenuItemRecord {
   image: string;
   is_available: boolean;
   is_veg: boolean;
+}
+
+export async function persistMenuItemToDb(item: MenuItemRecord) {
+  try {
+    await dbPool.query(
+      `INSERT INTO "MenuItem" (id, restaurant_id, category, name, description, price, image, is_available, is_veg, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name,
+         description = EXCLUDED.description,
+         price = EXCLUDED.price,
+         category = EXCLUDED.category,
+         image = EXCLUDED.image,
+         is_available = EXCLUDED.is_available,
+         is_veg = EXCLUDED.is_veg,
+         updated_at = NOW();`,
+      [
+        item.id,
+        item.restaurant_id,
+        item.category,
+        item.name,
+        item.description,
+        item.price,
+        item.image,
+        item.is_available,
+        item.is_veg,
+      ]
+    );
+  } catch (err: any) {
+    console.warn("[DB MenuItem Persist] Notice:", err.message);
+  }
+}
+
+export async function deleteMenuItemFromDb(id: string) {
+  try {
+    await dbPool.query(`DELETE FROM "MenuItem" WHERE id = $1;`, [id]);
+  } catch (err: any) {
+    console.warn("[DB MenuItem Delete] Notice:", err.message);
+  }
+}
+
+export async function persistMenuCategoryToDb(cat: { id: string; restaurant_id: string; name: string }) {
+  try {
+    await dbPool.query(
+      `INSERT INTO "MenuCategory" (id, restaurant_id, name, created_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;`,
+      [cat.id, cat.restaurant_id, cat.name]
+    );
+  } catch (err: any) {
+    console.warn("[DB MenuCategory Persist] Notice:", err.message);
+  }
+}
+
+export async function persistOrderToDb(order: OrderRecord) {
+  try {
+    await dbPool.query(
+      `INSERT INTO "Order" (
+        id, customer_id, guest_session_id, restaurant_id, delivery_partner_id, status,
+        delivery_address, notes, subtotal, discount_amount, coupon_code, delivery_fee,
+        platform_fee, tax, total, payment_status, payment_method, contact_info, items,
+        version, created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        status = EXCLUDED.status,
+        delivery_partner_id = EXCLUDED.delivery_partner_id,
+        payment_status = EXCLUDED.payment_status,
+        version = EXCLUDED.version,
+        updated_at = NOW();`,
+      [
+        order.id,
+        order.customer_id,
+        order.guest_session_id || null,
+        order.restaurant_id,
+        order.delivery_partner_id || null,
+        order.status,
+        order.delivery_address,
+        order.notes || "",
+        order.subtotal || 0,
+        order.discount_amount || 0,
+        order.coupon_code || null,
+        order.delivery_fee || 0,
+        order.platform_fee || 0,
+        order.tax || 0,
+        order.total || 0,
+        order.payment_status || "pending",
+        order.payment_method || "online",
+        JSON.stringify(order.contact_info || null),
+        JSON.stringify(order.items || []),
+        order.version || 1,
+        order.created_at || new Date().toISOString(),
+        order.updated_at || new Date().toISOString(),
+      ]
+    );
+  } catch (err: any) {
+    console.warn("[DB Order Persist] Notice:", err.message);
+  }
+}
+
+export async function updateOrderStatusInDb(orderId: string, status: string, deliveryPartnerId?: string, paymentStatus?: string) {
+  try {
+    const fields: string[] = ["status = $1", "updated_at = NOW()"];
+    const params: any[] = [status];
+    let idx = 2;
+    if (deliveryPartnerId !== undefined) {
+      fields.push(`delivery_partner_id = $${idx++}`);
+      params.push(deliveryPartnerId);
+    }
+    if (paymentStatus !== undefined) {
+      fields.push(`payment_status = $${idx++}`);
+      params.push(paymentStatus);
+    }
+    params.push(orderId);
+    await dbPool.query(`UPDATE "Order" SET ${fields.join(", ")} WHERE id = $${idx};`, params);
+  } catch (err: any) {
+    console.warn("[DB Order Status Update] Notice:", err.message);
+  }
 }
 
 const menuItems: MenuItemRecord[] = [
@@ -2763,17 +3024,6 @@ export function createGatewayApp(): express.Express {
     return void res.json({ success: true, data: structuredCategories, total: matchedItems.length });
   });
 
-  // Categories state
-  const categories: Array<{ id: string; restaurant_id: string; name: string }> = [
-    { id: "cat-burgers", restaurant_id: "1", name: "Burgers" },
-    { id: "cat-sides", restaurant_id: "1", name: "Sides" },
-    { id: "cat-pizza", restaurant_id: "2", name: "Pizza" },
-    { id: "cat-biryani", restaurant_id: "3", name: "Biryani" },
-    { id: "cat-starters", restaurant_id: "1", name: "Starters" },
-    { id: "cat-beverages", restaurant_id: "1", name: "Beverages" },
-    { id: "cat-desserts", restaurant_id: "1", name: "Desserts" },
-  ];
-
   app.get(["/menu/categories", "/menu/categories/:restaurantId"], (req, res) => {
     const restaurantId = req.params.restaurantId || (req.query.restaurantId as string) || (req.query.restaurant_id as string);
     let result = categories;
@@ -2794,6 +3044,7 @@ export function createGatewayApp(): express.Express {
       name: String(name).trim(),
     };
     categories.push(newCat);
+    persistMenuCategoryToDb(newCat);
     return void res.status(201).json({ success: true, data: newCat });
   });
 
@@ -2867,6 +3118,8 @@ export function createGatewayApp(): express.Express {
       is_veg: Boolean(is_veg),
     };
     menuItems.unshift(newItem);
+    persistMenuItemToDb(newItem);
+
     return void res.status(201).json({
       success: true,
       data: {
@@ -2895,6 +3148,8 @@ export function createGatewayApp(): express.Express {
       existing.is_available = Boolean(is_available);
     }
     existing.is_veg = is_veg !== undefined ? Boolean(is_veg) : existing.is_veg;
+
+    persistMenuItemToDb(existing);
 
     const isAvail = Boolean(existing.is_available ?? true);
     const io = getSocketIO();
@@ -2932,8 +3187,9 @@ export function createGatewayApp(): express.Express {
       return void res.status(404).json({ success: false, message: "Menu item not found" });
     }
     existing.is_available = !existing.is_available;
-    const isAvail = Boolean(existing.is_available ?? true);
+    persistMenuItemToDb(existing);
 
+    const isAvail = Boolean(existing.is_available ?? true);
     const io = getSocketIO();
     if (io) {
       const payload = {
@@ -2961,6 +3217,7 @@ export function createGatewayApp(): express.Express {
     if (idx !== -1) {
       menuItems.splice(idx, 1);
     }
+    deleteMenuItemFromDb(String(rawId || ""));
     return void res.json({ success: true, message: "Item deleted successfully" });
   });
 
@@ -3376,6 +3633,7 @@ export function createGatewayApp(): express.Express {
     };
 
     orders.unshift(newOrder);
+    persistOrderToDb(newOrder);
 
     // If COD, order is immediately confirmed: clear cart, broadcast event, send email
     if (!isOnlinePayment) {
@@ -3790,6 +4048,7 @@ export function createGatewayApp(): express.Express {
     order.status = "cancelled";
     order.version = (order.version || 1) + 1;
     order.updated_at = new Date().toISOString();
+    updateOrderStatusInDb(order.id, "cancelled");
 
     broadcastOrderStatusUpdated(order.id, "cancelled", order);
 
@@ -3802,6 +4061,7 @@ export function createGatewayApp(): express.Express {
     order.status = "accepted";
     order.version = (order.version || 1) + 1;
     order.updated_at = new Date().toISOString();
+    updateOrderStatusInDb(order.id, "accepted");
 
     broadcastOrderStatusUpdated(order.id, "accepted", order);
 
@@ -3814,6 +4074,7 @@ export function createGatewayApp(): express.Express {
     order.status = "preparing";
     order.version = (order.version || 1) + 1;
     order.updated_at = new Date().toISOString();
+    updateOrderStatusInDb(order.id, "preparing");
 
     broadcastOrderStatusUpdated(order.id, "preparing", order);
 
@@ -3826,6 +4087,7 @@ export function createGatewayApp(): express.Express {
     order.status = "ready_for_pickup";
     order.version = (order.version || 1) + 1;
     order.updated_at = new Date().toISOString();
+    updateOrderStatusInDb(order.id, "ready_for_pickup");
 
     broadcastOrderStatusUpdated(order.id, "ready_for_pickup", order);
 
@@ -3870,6 +4132,7 @@ export function createGatewayApp(): express.Express {
       order.status = "assigned";
       order.version = (order.version || 1) + 1;
       order.updated_at = new Date().toISOString();
+      updateOrderStatusInDb(order.id, "assigned", authUser.id);
       broadcastOrderStatusUpdated(order.id, "assigned", order);
     }
     return void res.json({ success: true, message: "Delivery accepted and assigned", data: order });
@@ -3883,6 +4146,7 @@ export function createGatewayApp(): express.Express {
       order.status = "out_for_delivery";
       order.version = (order.version || 1) + 1;
       order.updated_at = new Date().toISOString();
+      updateOrderStatusInDb(order.id, "out_for_delivery");
       broadcastOrderStatusUpdated(order.id, "out_for_delivery", order);
     }
     return void res.json({ success: true, message: "In transit", data: order });
@@ -3897,6 +4161,7 @@ export function createGatewayApp(): express.Express {
       order.payment_status = "paid";
       order.version = (order.version || 1) + 1;
       order.updated_at = new Date().toISOString();
+      updateOrderStatusInDb(order.id, "delivered", undefined, "paid");
       broadcastOrderStatusUpdated(order.id, "delivered", order);
     }
     return void res.json({ success: true, message: "Delivery completed", data: order });
