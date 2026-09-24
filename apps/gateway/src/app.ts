@@ -408,25 +408,25 @@ interface RestaurantRecord {
   name: string;
   description: string;
   address: string;
-  phone_number?: string;
+  phone_number?: string | null | undefined;
   cuisine: string[];
   rating: number;
   image: string;
-  image_url?: string;
+  image_url?: string | null | undefined;
   is_active: boolean;
-  is_accepting_orders?: boolean;
+  is_accepting_orders?: boolean | undefined;
   delivery_time: string;
   price_for_two: number;
-  opens_at?: string;
-  closes_at?: string;
-  owner_id?: string;
-  user_id?: string;
-  owner_name?: string;
-  owner_email?: string;
-  status?: "ACTIVE" | "SUSPENDED" | "BLOCKED" | "DELETED";
-  deleted_at?: string | null;
-  created_at?: string;
-  updated_at?: string;
+  opens_at?: string | null | undefined;
+  closes_at?: string | null | undefined;
+  owner_id?: string | null | undefined;
+  user_id?: string | null | undefined;
+  owner_name?: string | null | undefined;
+  owner_email?: string | null | undefined;
+  status?: "ACTIVE" | "SUSPENDED" | "BLOCKED" | "DELETED" | undefined;
+  deleted_at?: string | null | undefined;
+  created_at?: string | undefined;
+  updated_at?: string | undefined;
 }
 
 const restaurants: RestaurantRecord[] = [
@@ -2951,7 +2951,7 @@ export function createGatewayApp(): express.Express {
           m.id === rawIdStr ||
           m.id === `item-${rawIdStr}` ||
           rawIdStr.replace(/^item-/, "") === m.id.replace(/^item-/, "") ||
-          (rawItem.name && m.name.trim().toLowerCase() === String(rawItem.name).trim().toLowerCase())
+          (Boolean((rawItem as any)?.name) && m.name.trim().toLowerCase() === String((rawItem as any).name).trim().toLowerCase())
       );
       if (!trustedMenuItem) {
         return void res.status(400).json({
@@ -4715,7 +4715,7 @@ export function createGatewayApp(): express.Express {
       return void res.status(403).json({ success: false, message: "Forbidden: Admin access required" });
     }
 
-    const { id } = req.params;
+    const id = String(req.params.id || "");
     const { status: targetStatus, reason } = req.body;
     const validStatuses = ["ACTIVE", "SUSPENDED", "BLOCKED"];
     if (!validStatuses.includes(targetStatus)) {
