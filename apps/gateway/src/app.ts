@@ -2445,7 +2445,7 @@ export function createGatewayApp(): express.Express {
     });
   });
 
-  app.get("/restaurants/my-profile", authenticate, async (req, res) => {
+  app.get(["/restaurants/my-profile", "/restaurants/me", "/restaurant/me"], authenticate, async (req, res) => {
     const user = (req as any).user;
     let rest = getRestaurantForUser(user?.id);
 
@@ -2465,7 +2465,10 @@ export function createGatewayApp(): express.Express {
         }
         if (row.opens_at) rest.opens_at = row.opens_at;
         if (row.closes_at) rest.closes_at = row.closes_at;
-        if (row.is_active !== null && row.is_active !== undefined) rest.is_active = row.is_active;
+        if (row.is_active !== null && row.is_active !== undefined) {
+          rest.is_active = Boolean(row.is_active);
+          rest.is_accepting_orders = Boolean(row.is_active);
+        }
       }
     } catch (e: any) {
       console.warn("[My Profile DB Query] Notice:", e.message);
@@ -2479,7 +2482,7 @@ export function createGatewayApp(): express.Express {
     });
   });
 
-  app.put("/restaurants/my-profile", authenticate, async (req, res) => {
+  app.put(["/restaurants/my-profile", "/restaurants/me", "/restaurant/me"], authenticate, async (req, res) => {
     const user = (req as any).user;
     const rest = getRestaurantForUser(user?.id);
 
@@ -2498,6 +2501,8 @@ export function createGatewayApp(): express.Express {
       closesAt,
       is_active,
       isActive,
+      is_open,
+      isOpen,
       is_accepting_orders,
       isAcceptingOrders,
       cuisine,
@@ -2521,12 +2526,24 @@ export function createGatewayApp(): express.Express {
     if (closes_at !== undefined || closesAt !== undefined) {
       rest.closes_at = String(closes_at || closesAt);
     }
-    if (is_active !== undefined || isActive !== undefined) {
-      rest.is_active = Boolean(is_active ?? isActive);
+    
+    // Status handling (is_active / is_open / is_accepting_orders)
+    if (
+      is_active !== undefined ||
+      isActive !== undefined ||
+      is_open !== undefined ||
+      isOpen !== undefined ||
+      is_accepting_orders !== undefined ||
+      isAcceptingOrders !== undefined
+    ) {
+      const activeVal = Boolean(
+        is_active ?? isActive ?? is_open ?? isOpen ?? is_accepting_orders ?? isAcceptingOrders
+      );
+      rest.is_active = activeVal;
+      rest.is_accepting_orders = activeVal;
+      (rest as any).is_open = activeVal;
     }
-    if (is_accepting_orders !== undefined || isAcceptingOrders !== undefined) {
-      rest.is_accepting_orders = Boolean(is_accepting_orders ?? isAcceptingOrders);
-    }
+
     if (cuisine && Array.isArray(cuisine)) {
       rest.cuisine = cuisine;
     } else if (cuisine_type && typeof cuisine_type === "string") {
@@ -2564,6 +2581,17 @@ export function createGatewayApp(): express.Express {
       console.warn("[Update Restaurant DB Persist] Notice:", dbPutErr.message);
     }
 
+    const io = getSocketIO();
+    if (io) {
+      io.emit("RESTAURANT_STATUS_UPDATED", {
+        restaurantId: rest.id,
+        id: rest.id,
+        is_open: rest.is_active,
+        is_active: rest.is_active,
+        name: rest.name,
+      });
+    }
+
     const formatted = formatRestaurantOutput(rest);
 
     return void res.json({
@@ -2573,20 +2601,96 @@ export function createGatewayApp(): express.Express {
     });
   });
 
-  app.post("/restaurants/my-profile/open", authenticate, (req, res) => {
+  app.patch(["/restaurants/my-profile", "/restaurants/me", "/restaurant/me"], authenticate, async (req, res) => {
+    const user = (req as any).user;
+    const rest = getRestaurantForUser(user?.id);
+
+    const { is_active, isActive, is_open, isOpen } = req.body;
+    if (is_active !== undefined || isActive !== undefined || is_open !== undefined || isOpen !== undefined) {
+      const activeVal = Boolean(is_active ?? isActive ?? is_open ?? isOpen);
+      rest.is_active = activeVal;
+      rest.is_accepting_orders = activeVal;
+      (rest as any).is_open = activeVal;
+
+      try {
+        await dbPool.query(
+          `UPDATE "Restaurant" SET is_active = $1, updated_at = NOW() WHERE user_id = $2 OR id = $3;`,
+          [activeVal, user?.id, rest.id]
+        );
+      } catch (err: any) {
+        console.warn("[Restaurant Status Toggle DB Update] Notice:", err.message);
+      }
+
+      const io = getSocketIO();
+      if (io) {
+        io.emit("RESTAURANT_STATUS_UPDATED", {
+          restaurantId: rest.id,
+          id: rest.id,
+          is_open: activeVal,
+          is_active: activeVal,
+          name: rest.name,
+        });
+      }
+    }
+
+    const formatted = formatRestaurantOutput(rest);
+    return void res.json({ success: true, data: formatted, profile: formatted });
+  });
+
+  app.post("/restaurants/my-profile/open", authenticate, async (req, res) => {
     const user = (req as any).user;
     const rest = getRestaurantForUser(user?.id);
     rest.is_active = true;
     rest.is_accepting_orders = true;
+    (rest as any).is_open = true;
+
+    try {
+      await dbPool.query(
+        `UPDATE "Restaurant" SET is_active = true, updated_at = NOW() WHERE user_id = $1 OR id = $2;`,
+        [user?.id, rest.id]
+      );
+    } catch (_) {}
+
+    const io = getSocketIO();
+    if (io) {
+      io.emit("RESTAURANT_STATUS_UPDATED", {
+        restaurantId: rest.id,
+        id: rest.id,
+        is_open: true,
+        is_active: true,
+        name: rest.name,
+      });
+    }
+
     const formatted = formatRestaurantOutput(rest);
     return void res.json({ success: true, data: formatted });
   });
 
-  app.post("/restaurants/my-profile/close", authenticate, (req, res) => {
+  app.post("/restaurants/my-profile/close", authenticate, async (req, res) => {
     const user = (req as any).user;
     const rest = getRestaurantForUser(user?.id);
     rest.is_active = false;
     rest.is_accepting_orders = false;
+    (rest as any).is_open = false;
+
+    try {
+      await dbPool.query(
+        `UPDATE "Restaurant" SET is_active = false, updated_at = NOW() WHERE user_id = $1 OR id = $2;`,
+        [user?.id, rest.id]
+      );
+    } catch (_) {}
+
+    const io = getSocketIO();
+    if (io) {
+      io.emit("RESTAURANT_STATUS_UPDATED", {
+        restaurantId: rest.id,
+        id: rest.id,
+        is_open: false,
+        is_active: false,
+        name: rest.name,
+      });
+    }
+
     const formatted = formatRestaurantOutput(rest);
     return void res.json({ success: true, data: formatted });
   });

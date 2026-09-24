@@ -154,11 +154,12 @@ export default function RestaurantLayout() {
       setUpdatingStatus(true);
       const response = await axios.put('/restaurants/my-profile', {
         is_active: newStatus,
-        is_open: newStatus
+        is_open: newStatus,
+        is_accepting_orders: newStatus
       });
       if (response.data?.success) {
-        const updatedProfile = response.data.data;
-        const isOpen = Boolean(updatedProfile?.is_active ?? updatedProfile?.is_open ?? newStatus);
+        const updatedProfile = response.data.data || response.data.profile;
+        const isOpen = Boolean(updatedProfile?.is_open ?? updatedProfile?.is_active ?? newStatus);
         
         setIsRestaurantOpen(isOpen);
         dispatch(loginSuccess({
@@ -170,10 +171,10 @@ export default function RestaurantLayout() {
         // Broadcast status update via socket so customer pages update in real-time
         if (socket) {
           socket.emit('RESTAURANT_STATUS_UPDATED', {
-            restaurantId: updatedProfile.id || profile?.id,
+            restaurantId: updatedProfile?.id || profile?.id,
             is_open: isOpen,
             is_active: isOpen,
-            name: updatedProfile.name || profile?.name || 'Restaurant'
+            name: updatedProfile?.name || profile?.name || 'Restaurant'
           });
         }
 
@@ -232,8 +233,9 @@ export default function RestaurantLayout() {
     return 'Restaurant Dashboard';
   };
 
-  const userName = user?.full_name || user?.email?.split('@')[0] || 'Rajesh Kayal';
-  const userInitial = userName.charAt(0).toUpperCase();
+  const restaurantName = profile?.name || user?.restaurant_name || (user?.full_name ? `${user.full_name}'s Restaurant` : 'Restaurant');
+  const ownerName = user?.full_name || 'Owner';
+  const restaurantInitial = ((restaurantName || 'R').trim().split(/\s+/).map(n => n[0]).join('').slice(0, 2)).toUpperCase();
 
   return (
     <div className="flex h-screen bg-[#F8FAFC] overflow-hidden font-sans">
@@ -254,15 +256,15 @@ export default function RestaurantLayout() {
             className="flex items-center justify-between p-2.5 mb-4 rounded-xl bg-[#1E293B]/80 hover:bg-[#1E293B] border border-white/5 transition-all group cursor-pointer"
           >
             <div className="flex items-center gap-2.5 overflow-hidden">
-              <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-bold text-xs text-white border border-white/10 shrink-0">
-                {userInitial}
+              <div className="w-8 h-8 rounded-lg bg-orange-500/20 border border-orange-500/30 flex items-center justify-center font-bold text-xs text-orange-400 shrink-0 select-none">
+                {restaurantInitial}
               </div>
               <div className="truncate">
-                <p className="text-xs font-bold text-slate-100 truncate group-hover:text-orange-400 transition-colors">
-                  {userName}
+                <p className="text-xs font-bold text-slate-100 truncate group-hover:text-orange-400 transition-colors" title={restaurantName}>
+                  {restaurantName}
                 </p>
                 <p className="text-[10px] text-slate-400 truncate font-medium">
-                  Restaurant Account
+                  {ownerName} (Owner)
                 </p>
               </div>
             </div>
