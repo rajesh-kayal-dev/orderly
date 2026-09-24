@@ -3,6 +3,7 @@ import { Outlet, Link, Navigate, useLocation, useNavigate } from 'react-router-d
 import { useDispatch, useSelector } from 'react-redux';
 import { logout } from '../../redux/slices/authSlice';
 import { resetCartState } from '../../redux/slices/cartSlice';
+import { notification } from 'antd';
 import axios from '../../api/axios';
 import socket from '../../socket';
 import BrandLogo from '../common/BrandLogo';
@@ -80,6 +81,12 @@ export default function AdminLayout() {
           read: false
         };
         setNotificationsList(prev => [notif, ...prev]);
+        notification.info({
+          message: notif.title,
+          description: `Customer placed order for ₹${data.total || 0}`,
+          placement: 'topRight',
+          duration: 4.5,
+        });
       };
 
       const handleNewPartner = (data) => {
@@ -95,6 +102,12 @@ export default function AdminLayout() {
           read: false
         };
         setNotificationsList(prev => [notif, ...prev]);
+        notification.info({
+          message: notif.title,
+          description: isDriver ? 'New driver pending approval.' : 'New restaurant pending approval.',
+          placement: 'topRight',
+          duration: 5,
+        });
       };
 
       const handleNewUser = (data) => {
@@ -107,6 +120,11 @@ export default function AdminLayout() {
           read: false
         };
         setNotificationsList(prev => [notif, ...prev]);
+        notification.info({
+          message: notif.title,
+          placement: 'topRight',
+          duration: 4,
+        });
       };
 
       const handleNewNotification = (notif) => {
@@ -121,25 +139,39 @@ export default function AdminLayout() {
           else targetLink = '/admin';
         }
 
-        setNotificationsList(prev => [{
+        const newN = {
           id: notif.id || Date.now(),
           title: notif.title || notif.message,
           link: targetLink,
           type: notif.type,
           time: 'Just now',
           read: false
-        }, ...prev]);
+        };
+
+        setNotificationsList(prev => [newN, ...prev]);
+        notification.info({
+          message: newN.title,
+          description: notif.message || 'New admin alert received.',
+          placement: 'topRight',
+          duration: 4.5,
+        });
       };
 
       const handleNewFeedback = (fb) => {
-        setNotificationsList(prev => [{
+        const notif = {
           id: Date.now(),
           title: `New Feedback received: "${fb.sentiment}" from ${fb.customer_name || 'Customer'}`,
           link: '/admin/feedback',
           type: 'Feedback',
           time: 'Just now',
           read: false
-        }, ...prev]);
+        };
+        setNotificationsList(prev => [notif, ...prev]);
+        notification.info({
+          message: notif.title,
+          placement: 'topRight',
+          duration: 4,
+        });
       };
 
       socket.on('NEW_ORDER', handleNewOrder);

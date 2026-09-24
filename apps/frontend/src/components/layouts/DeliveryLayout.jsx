@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { logout } from '../../redux/slices/authSlice';
+import { logout, loginSuccess } from '../../redux/slices/authSlice';
 import { resetCartState } from '../../redux/slices/cartSlice';
+import { notification } from 'antd';
 import axios from '../../api/axios';
 import socket from '../../socket';
 import BrandLogo from '../common/BrandLogo';
@@ -94,6 +95,12 @@ export default function DeliveryLayout() {
         orderId: data.orderId,
       };
       setNotificationsList((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
+      notification.info({
+        message: notif.title,
+        description: notif.message || 'You have a new update.',
+        placement: 'topRight',
+        duration: 4.5,
+      });
     };
 
     const handlePartnerApproved = (data) => {
@@ -106,6 +113,17 @@ export default function DeliveryLayout() {
         link: '/delivery',
       };
       setNotificationsList((prev) => [notif, ...prev.filter((n) => n.title !== notif.title)]);
+      dispatch(loginSuccess({
+        user: { ...user, status: 'ACTIVE', is_approved: true, is_active: true },
+        profile: { ...profile, status: 'ACTIVE', is_approved: true, is_active: true },
+        token
+      }));
+      notification.success({
+        message: 'Account Approved! 🎉',
+        description: 'Your delivery partner account has been verified and approved by admin!',
+        placement: 'topRight',
+        duration: 6,
+      });
     };
 
     const handleDeliveryOffer = (data) => {
@@ -121,6 +139,12 @@ export default function DeliveryLayout() {
         orderId: data.orderId
       };
       setNotificationsList(prev => [notif, ...prev]);
+      notification.info({
+        message: `New Delivery Request #${orderNum}`,
+        description: 'A new order is available for pickup. Open Orders to accept.',
+        placement: 'topRight',
+        duration: 5,
+      });
     };
 
     const handleReadyForPickup = (data) => {
@@ -136,6 +160,12 @@ export default function DeliveryLayout() {
         orderId: data.orderId
       };
       setNotificationsList(prev => [notif, ...prev]);
+      notification.info({
+        message: `Order #${orderNum} Ready!`,
+        description: 'Restaurant has marked this order ready for pickup.',
+        placement: 'topRight',
+        duration: 4.5,
+      });
     };
 
     const handleDriverAssigned = (data) => {
@@ -150,6 +180,12 @@ export default function DeliveryLayout() {
         orderId: data.orderId
       };
       setNotificationsList(prev => [notif, ...prev]);
+      notification.success({
+        message: `Order #${orderNum} Assigned`,
+        description: 'You have been assigned to deliver this order.',
+        placement: 'topRight',
+        duration: 5,
+      });
     };
 
     const handleOrderAccepted = (data) => {
@@ -172,7 +208,7 @@ export default function DeliveryLayout() {
       socket.off('DRIVER_ASSIGNED', handleDriverAssigned);
       socket.off('ORDER_ACCEPTED', handleOrderAccepted);
     };
-  }, [user, isOnline]);
+  }, [user, isOnline, profile, token]);
 
 
   const handleLogout = () => {

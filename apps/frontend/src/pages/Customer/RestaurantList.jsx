@@ -87,15 +87,59 @@ export default function RestaurantList() {
 
   useEffect(() => {
     const handleRestaurantStatusUpdated = (data) => {
+      if (!data) return;
       setRestaurants((prev) => prev.map((restaurant) => (
-        String(restaurant.id) === String(data.restaurantId)
-          ? { ...restaurant, is_open: data.is_open }
+        String(restaurant.id) === String(data.restaurantId || data.id)
+          ? { ...restaurant, ...data, is_open: data.is_open !== undefined ? data.is_open : restaurant.is_open }
+          : restaurant
+      )));
+    };
+
+    const handleRestaurantApproved = (data) => {
+      if (!data) return;
+      setRestaurants((prev) => {
+        const existingIdx = prev.findIndex(r => String(r.id) === String(data.id || data.restaurantId));
+        if (existingIdx !== -1) {
+          const updated = [...prev];
+          updated[existingIdx] = { ...updated[existingIdx], ...data, status: 'ACTIVE', is_active: true, is_approved: true };
+          return updated;
+        } else {
+          const newRest = {
+            id: data.id || `rest-${Date.now()}`,
+            name: data.name || 'New Gourmet Restaurant',
+            cuisine_type: data.cuisine_type || 'Multi-Cuisine',
+            address: data.address || 'Central City Area',
+            rating: data.rating || 4.8,
+            delivery_time: data.delivery_time || '25 - 35 min',
+            is_open: true,
+            status: 'ACTIVE',
+            image_url: data.image_url || data.image || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=600'
+          };
+          return [newRest, ...prev];
+        }
+      });
+    };
+
+    const handleRestaurantUpdated = (data) => {
+      if (!data) return;
+      setRestaurants((prev) => prev.map((restaurant) => (
+        String(restaurant.id) === String(data.id || data.restaurantId)
+          ? { ...restaurant, ...data }
           : restaurant
       )));
     };
 
     socket.on('RESTAURANT_STATUS_UPDATED', handleRestaurantStatusUpdated);
-    return () => socket.off('RESTAURANT_STATUS_UPDATED', handleRestaurantStatusUpdated);
+    socket.on('RESTAURANT_APPROVED', handleRestaurantApproved);
+    socket.on('RESTAURANT_UPDATED', handleRestaurantUpdated);
+    socket.on('RESTAURANT_STATUS_CHANGED', handleRestaurantStatusUpdated);
+
+    return () => {
+      socket.off('RESTAURANT_STATUS_UPDATED', handleRestaurantStatusUpdated);
+      socket.off('RESTAURANT_APPROVED', handleRestaurantApproved);
+      socket.off('RESTAURANT_UPDATED', handleRestaurantUpdated);
+      socket.off('RESTAURANT_STATUS_CHANGED', handleRestaurantStatusUpdated);
+    };
   }, []);
 
   const clearAllFilters = () => {

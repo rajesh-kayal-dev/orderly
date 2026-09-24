@@ -54,10 +54,11 @@ export default function Partners() {
 
     fetchApprovedPartners();
 
-    // Listen for real-time driver status updates
-    socket.on('DRIVER_STATUS_UPDATED', (data) => {
+    // Listen for real-time driver status and approval updates
+    const handleDriverStatusUpdated = (data) => {
+      if (!data) return;
       setPartnersList(prev => prev.map(p => {
-        const matchesUser = String(p.id) === String(data.userId);
+        const matchesUser = String(p.id) === String(data.userId || data.id);
         const matchesDriverId = String(p.id) === String(data.driverId) || (p.driverId && String(p.driverId) === String(data.driverId));
 
         if (matchesUser || matchesDriverId) {
@@ -67,6 +68,7 @@ export default function Partners() {
           );
           return {
             ...p,
+            ...data,
             status: isOnlineNow ? 'Online' : 'Offline',
             is_online: isOnlineNow,
             is_available: isOnlineNow
@@ -74,10 +76,45 @@ export default function Partners() {
         }
         return p;
       }));
-    });
+    };
+
+    const handlePartnerApproved = (data) => {
+      if (!data) return;
+      setPartnersList(prev => {
+        const existingIdx = prev.findIndex(p => String(p.id) === String(data.id || data.userId));
+        if (existingIdx !== -1) {
+          const updated = [...prev];
+          updated[existingIdx] = { ...updated[existingIdx], ...data, status: 'Online', is_available: true, is_approved: true };
+          return updated;
+        } else {
+          const newPartner = {
+            id: data.id || data.userId || `dp-${Date.now()}`,
+            name: data.name || data.full_name || 'Delivery Partner',
+            phone: data.phone || '+91 98765 43210',
+            vehicle_type: data.vehicle_type || 'Motorcycle',
+            rating: data.rating || 4.9,
+            total_deliveries: data.total_deliveries || 0,
+            status: 'Online',
+            is_online: true,
+            is_available: true,
+            is_approved: true,
+            avatar_url: data.avatar_url || data.profile_image
+          };
+          return [newPartner, ...prev];
+        }
+      });
+    };
+
+    socket.on('DRIVER_STATUS_UPDATED', handleDriverStatusUpdated);
+    socket.on('PARTNER_APPROVED', handlePartnerApproved);
+    socket.on('DRIVER_APPROVED', handlePartnerApproved);
+    socket.on('DELIVERY_PARTNER_UPDATED', handleDriverStatusUpdated);
 
     return () => {
-      socket.off('DRIVER_STATUS_UPDATED');
+      socket.off('DRIVER_STATUS_UPDATED', handleDriverStatusUpdated);
+      socket.off('PARTNER_APPROVED', handlePartnerApproved);
+      socket.off('DRIVER_APPROVED', handlePartnerApproved);
+      socket.off('DELIVERY_PARTNER_UPDATED', handleDriverStatusUpdated);
     };
   }, []);
 

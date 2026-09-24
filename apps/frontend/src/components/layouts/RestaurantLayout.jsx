@@ -127,6 +127,12 @@ export default function RestaurantLayout() {
           link: notif.link || '/restaurant'
         };
         setNotificationsList(prev => [newNotif, ...prev.filter(n => n.id !== newNotif.id)]);
+        notification.info({
+          message: newNotif.title,
+          description: newNotif.message || 'You have a new update.',
+          placement: 'topRight',
+          duration: 4.5,
+        });
       };
 
       const handleRestaurantApproved = (data) => {
@@ -139,6 +145,18 @@ export default function RestaurantLayout() {
           link: '/restaurant/menu'
         };
         setNotificationsList(prev => [approveNotif, ...prev.filter(n => n.title !== approveNotif.title)]);
+        setIsRestaurantOpen(true);
+        dispatch(loginSuccess({
+          user: { ...user, status: 'ACTIVE', is_approved: true, is_active: true },
+          profile: { ...profile, status: 'ACTIVE', is_approved: true, is_active: true, is_open: true },
+          token
+        }));
+        notification.success({
+          message: 'Restaurant Approved! 🎉',
+          description: 'Your restaurant has been approved by admin and is now live!',
+          placement: 'topRight',
+          duration: 6,
+        });
       };
 
       const handleNewOrder = (data) => {
@@ -152,6 +170,12 @@ export default function RestaurantLayout() {
           link: '/restaurant/orders'
         };
         setNotificationsList(prev => [newNotif, ...prev]);
+        notification.success({
+          message: `New Order Received! #${orderNum}`,
+          description: `Total: ₹${data.total || 0}. Click notifications to view order details.`,
+          placement: 'topRight',
+          duration: 5,
+        });
       };
 
       const handleStatusUpdate = (data) => {
@@ -165,6 +189,12 @@ export default function RestaurantLayout() {
           link: '/restaurant/orders'
         };
         setNotificationsList(prev => [newNotif, ...prev]);
+        notification.info({
+          message: `Order #${orderNum} Status Updated`,
+          description: `Status changed to ${data.status ? data.status.replace(/_/g, ' ') : 'updated'}.`,
+          placement: 'topRight',
+          duration: 4,
+        });
       };
 
       socket.on('NEW_NOTIFICATION', handleNewNotification);
@@ -178,7 +208,7 @@ export default function RestaurantLayout() {
         socket.off('ORDER_STATUS_UPDATED', handleStatusUpdate);
       };
     }
-  }, [user, profile]);
+  }, [user, profile, token]);
 
   const handleStatusChange = async (newStatus) => {
     if (updatingStatus) return;

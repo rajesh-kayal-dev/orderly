@@ -3936,6 +3936,17 @@ export function createGatewayApp(): express.Express {
             : true;
         partner.is_available = nextAvail;
         (partner as any).is_online = nextAvail;
+
+        const io = getSocketIO();
+        if (io) {
+          io.emit("DRIVER_STATUS_UPDATED", {
+            userId: authUser?.id || partner.userId,
+            driverId: partner.id,
+            status: nextAvail ? "Online" : "Offline",
+            is_online: nextAvail,
+            is_available: nextAvail,
+          });
+        }
       }
       return void res.json({
         success: true,
@@ -4543,7 +4554,23 @@ export function createGatewayApp(): express.Express {
         io.to(user.id).emit("NEW_NOTIFICATION", approveNotif);
         if (rest?.id) io.to(`restaurant_${rest.id}`).emit("NEW_NOTIFICATION", approveNotif);
         io.to("role_restaurant").emit("NEW_NOTIFICATION", approveNotif);
-        io.to(user.id).emit("RESTAURANT_APPROVED", { id: rest?.id || user.id, name: restName, status: "ACTIVE" });
+        
+        const restPayload = {
+          id: rest?.id || user.id,
+          name: restName,
+          status: "ACTIVE",
+          is_active: true,
+          is_open: true,
+          cuisine_type: (rest as any)?.cuisine_type || (Array.isArray(rest?.cuisine) ? rest?.cuisine.join(" • ") : "Multi-Cuisine"),
+          address: rest?.address || "City Center",
+          rating: rest?.rating || 4.8,
+          delivery_time: rest?.delivery_time || "25 - 35 min",
+          image_url: rest?.image || rest?.image_url || "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=600",
+        };
+        io.emit("RESTAURANT_APPROVED", restPayload);
+        io.emit("RESTAURANT_STATUS_UPDATED", { restaurantId: rest?.id || user.id, is_open: true, status: "ACTIVE" });
+        io.emit("RESTAURANT_STATUS_CHANGED", { restaurantId: rest?.id || user.id, status: "ACTIVE", isActive: true });
+        io.emit("RESTAURANT_UPDATED", restPayload);
       }
     }
 
@@ -4597,12 +4624,22 @@ export function createGatewayApp(): express.Express {
       if (io) {
         io.to(user.id).emit("NEW_NOTIFICATION", approveNotif);
         io.to("role_delivery").emit("NEW_NOTIFICATION", approveNotif);
-        io.to(user.id).emit("PARTNER_APPROVED", {
+        const dpPayload = {
           id: user.id,
+          userId: user.id,
+          name: user.full_name,
+          full_name: user.full_name,
+          phone: user.phone_number || "+91 98456" + Math.floor(1000 + Math.random() * 9000),
+          vehicle_type: "Motorcycle",
+          rating: 4.9,
+          total_deliveries: 0,
           status: "ACTIVE",
           is_active: true,
           is_available: true,
-        });
+          is_online: true,
+        };
+        io.emit("PARTNER_APPROVED", dpPayload);
+        io.emit("DRIVER_APPROVED", dpPayload);
         io.emit("DRIVER_STATUS_UPDATED", {
           userId: user.id,
           driverId: user.id,
@@ -4610,6 +4647,7 @@ export function createGatewayApp(): express.Express {
           is_online: true,
           is_available: true,
         });
+        io.emit("DELIVERY_PARTNER_UPDATED", dpPayload);
       }
     }
 
@@ -4982,7 +5020,22 @@ export function createGatewayApp(): express.Express {
         if (targetOwnerId) io.to(targetOwnerId).emit("NEW_NOTIFICATION", approveNotif);
         io.to(`restaurant_${rest.id}`).emit("NEW_NOTIFICATION", approveNotif);
         io.to("role_restaurant").emit("NEW_NOTIFICATION", approveNotif);
-        if (targetOwnerId) io.to(targetOwnerId).emit("RESTAURANT_APPROVED", { id: rest.id, name: rest.name, status: "ACTIVE" });
+        
+        const restPayload = {
+          id: rest.id,
+          name: rest.name,
+          status: "ACTIVE",
+          is_active: true,
+          is_open: true,
+          cuisine_type: (rest as any)?.cuisine_type || (Array.isArray(rest?.cuisine) ? rest?.cuisine.join(" • ") : "Multi-Cuisine"),
+          address: rest.address || "City Center",
+          rating: rest.rating || 4.8,
+          delivery_time: rest.delivery_time || "25 - 35 min",
+          image_url: rest.image || rest.image_url || "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=600",
+        };
+        io.emit("RESTAURANT_APPROVED", restPayload);
+        io.emit("RESTAURANT_STATUS_UPDATED", { restaurantId: rest.id, is_open: true, status: "ACTIVE" });
+        io.emit("RESTAURANT_UPDATED", restPayload);
       }
     } else if (targetStatus === "SUSPENDED" || targetStatus === "BLOCKED") {
       const alertNotif = {
@@ -5002,6 +5055,7 @@ export function createGatewayApp(): express.Express {
         if (targetOwnerId) io.to(targetOwnerId).emit("NEW_NOTIFICATION", alertNotif);
         io.to(`restaurant_${rest.id}`).emit("NEW_NOTIFICATION", alertNotif);
         io.to("role_restaurant").emit("NEW_NOTIFICATION", alertNotif);
+        io.emit("RESTAURANT_STATUS_UPDATED", { restaurantId: rest.id, is_open: false, status: targetStatus });
       }
     }
 
@@ -5317,12 +5371,29 @@ export function createGatewayApp(): express.Express {
       if (io) {
         io.to(driverUserId).emit("NEW_NOTIFICATION", approveNotif);
         io.to("role_delivery").emit("NEW_NOTIFICATION", approveNotif);
-        io.to(driverUserId).emit("PARTNER_APPROVED", {
+        const dpPayload = {
           id: driverUserId,
-          status: targetStatus,
+          userId: driverUserId,
+          name: driverName,
+          status: "ACTIVE",
           is_active: true,
           is_available: true,
+          is_online: true,
+          phone: dp?.phone || u?.phone_number || "+91 98765 43210",
+          vehicle_type: dp?.vehicle_type || "Motorcycle",
+          rating: dp?.rating || 4.9,
+          total_deliveries: dp?.deliveries || 0,
+        };
+        io.emit("PARTNER_APPROVED", dpPayload);
+        io.emit("DRIVER_APPROVED", dpPayload);
+        io.emit("DRIVER_STATUS_UPDATED", {
+          driverId: dp?.id || driverUserId,
+          userId: driverUserId,
+          status: "Online",
+          is_online: true,
+          is_available: true,
         });
+        io.emit("DELIVERY_PARTNER_UPDATED", dpPayload);
       }
     } else if (targetStatus === "SUSPENDED" || targetStatus === "BLOCKED") {
       const alertNotif = {
