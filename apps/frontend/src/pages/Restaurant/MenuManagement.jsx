@@ -403,7 +403,7 @@ export default function MenuManagement() {
                             >
                                 <div className="flex justify-between items-start mb-2">
                                     <h3 className="text-xl font-bold text-gray-800 line-clamp-1">{item.name}</h3>
-                                    <span className="text-primary font-black text-lg">{(parseFloat(item.price || 0)).toLocaleString()}đ</span>
+                                    <span className="text-primary font-black text-lg">₹{(parseFloat(item.price || 0)).toLocaleString('en-IN')}</span>
                                 </div>
                                 <Tag className="mb-3 rounded-full border-none bg-orange-50 text-orange-500 font-bold px-3">
                                     {item.category?.name || 'Uncategorized'}
@@ -458,16 +458,18 @@ export default function MenuManagement() {
 
                         <Form.Item
                             name="price"
-                            label="Price (đ)"
+                            label="Price (₹)"
                             rules={[{ required: true, message: 'Please enter price' }]}
                         >
                             <InputNumber 
                                 className="w-full rounded-xl border-gray-200" 
                                 size="large" 
                                 min={0} 
-                                step={1000}
+                                step={10}
+                                prefix="₹"
+                                placeholder="e.g. 199"
                                 formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                                parser={value => value.replace(/\$\s?|(,*)/g, '')}
+                                parser={value => value.replace(/\$\s?|(,*)|₹\s?/g, '')}
                             />
                         </Form.Item>
 

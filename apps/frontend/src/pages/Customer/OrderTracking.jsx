@@ -20,13 +20,15 @@ import {
   HomeOutlined,
   StarFilled,
   CheckCircleFilled,
+  CheckCircleOutlined,
   CompassOutlined,
   ShoppingOutlined,
   SearchOutlined,
   UserOutlined,
   CloseCircleOutlined,
   FireOutlined,
-  CheckOutlined
+  CheckOutlined,
+  UnorderedListOutlined
 } from '@ant-design/icons';
 
 // Custom Leaflet Icons for Map
@@ -54,29 +56,86 @@ const destinationPinIcon = new L.DivIcon({
 function MapRecenter({ bounds }) {
   const map = useMap();
   useEffect(() => {
-    if (bounds && bounds.length > 0) {
-      map.fitBounds(bounds, { padding: [40, 40] });
+    if (bounds && Array.isArray(bounds) && bounds.length >= 2) {
+      const valid = bounds.every(b => Array.isArray(b) && b.length === 2 && !isNaN(b[0]) && !isNaN(b[1]));
+      if (valid) {
+        try {
+          map.fitBounds(bounds, { padding: [40, 40] });
+        } catch (e) {
+          // ignore map bounds error
+        }
+      }
     }
   }, [bounds, map]);
   return null;
 }
 
-const getStatusLevel = (statusStr) => {
+export const getStatusLevel = (statusStr) => {
   const st = (statusStr || 'placed').toLowerCase();
-  if (st === 'placed' || st === 'pending') return 1;
-  if (st === 'accepted' || st === 'confirmed') return 2;
-  if (st === 'preparing' || st === 'ready') return 3;
-  if (st === 'assigned') return 4;
-  if (st === 'out_for_delivery' || st === 'picked_up') return 5;
-  if (st === 'delivered' || st === 'completed') return 6;
   if (st === 'cancelled') return 0;
+  if (st === 'payment_pending' || st === 'pending' || st === 'placed') return 1;
+  if (st === 'accepted' || st === 'confirmed') return 2;
+  if (st === 'preparing' || st === 'ready' || st === 'ready_for_pickup') return 3;
+  if (st === 'assigned' || st === 'arrived') return 4;
+  if (st === 'picked_up' || st === 'out_for_delivery' || st === 'in_transit') return 5;
+  if (st === 'delivered' || st === 'completed') return 6;
   return 1;
+};
+
+const formatStatusDisplay = (statusStr) => {
+  const st = (statusStr || 'placed').toLowerCase();
+  if (st === 'payment_pending') return 'Payment Pending';
+  if (st === 'placed' || st === 'pending') return 'Order Placed';
+  if (st === 'accepted' || st === 'confirmed') return 'Order Confirmed';
+  if (st === 'preparing') return 'Preparing Food';
+  if (st === 'ready' || st === 'ready_for_pickup') return 'Ready for Pickup';
+  if (st === 'assigned' || st === 'arrived') return 'Driver Assigned';
+  if (st === 'picked_up') return 'Food Picked Up';
+  if (st === 'out_for_delivery' || st === 'in_transit') return 'Out for Delivery';
+  if (st === 'delivered' || st === 'completed') return 'Delivered';
+  if (st === 'cancelled') return 'Cancelled';
+  return st.charAt(0).toUpperCase() + st.slice(1).replace(/_/g, ' ');
+};
+
+const getStatusBadgeClass = (statusStr) => {
+  const st = (statusStr || 'placed').toLowerCase();
+  if (st === 'delivered' || st === 'completed') {
+    return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  }
+  if (st === 'cancelled') {
+    return 'bg-rose-50 text-rose-700 border-rose-200';
+  }
+  if (st === 'out_for_delivery' || st === 'in_transit' || st === 'picked_up') {
+    return 'bg-blue-50 text-blue-700 border-blue-200';
+  }
+  if (st === 'preparing' || st === 'ready' || st === 'ready_for_pickup') {
+    return 'bg-amber-50 text-amber-700 border-amber-200';
+  }
+  return 'bg-orange-50 text-orange-700 border-orange-200';
+};
+
+const formatOrderDateTime = (isoDate) => {
+  if (!isoDate) return '';
+  try {
+    const d = new Date(isoDate);
+    if (isNaN(d.getTime())) return '';
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (isToday) {
+      return `Today, ${timeStr}`;
+    }
+    const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    return `${dateStr}, ${timeStr}`;
+  } catch (e) {
+    return '';
+  }
 };
 
 // Generates smooth multi-waypoint road route between restaurant and customer
 const generateRouteWaypoints = (restCoords, custCoords) => {
-  const [rLat, rLng] = restCoords || [22.5726, 88.4149];
-  const [cLat, cLng] = custCoords || [22.5805, 88.3890];
+  const [rLat, rLng] = restCoords || [22.7196, 75.8577];
+  const [cLat, cLng] = custCoords || [22.7533, 75.8937];
   
   return [
     [rLat, rLng],
@@ -88,7 +147,7 @@ const generateRouteWaypoints = (restCoords, custCoords) => {
 };
 
 const interpolatePosition = (routePoints, progress) => {
-  if (!routePoints || routePoints.length === 0) return [22.5765, 88.4020];
+  if (!routePoints || routePoints.length === 0) return [22.7196, 75.8577];
   if (progress <= 0) return routePoints[0];
   if (progress >= 1) return routePoints[routePoints.length - 1];
 
@@ -106,7 +165,7 @@ const interpolatePosition = (routePoints, progress) => {
 };
 
 export default function OrderTracking() {
-  const { token } = useSelector((state) => state.auth);
+  const { token, user } = useSelector((state) => state.auth);
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -118,125 +177,150 @@ export default function OrderTracking() {
   const [loading, setLoading] = useState(true);
 
   // Live Driver Real-time Movement & GPS state
-  const [trackProgress, setTrackProgress] = useState(0.40);
-  const [isLiveSimulating, setIsLiveSimulating] = useState(true);
-  const [simSpeed, setSimSpeed] = useState(1);
+  const [trackProgress, setTrackProgress] = useState(0.0);
   const [socketDriverPos, setSocketDriverPos] = useState(null);
 
-  const fetchOrders = async () => {
-    if (!token && !guestToken && !urlOrderId) {
-      setLoading(false);
-      return;
-    }
+  const parseOrderRecord = (foundActive) => {
+    if (!foundActive) return null;
+    const st = (foundActive.status || 'placed').toLowerCase();
+    const itemsArr = foundActive.items || foundActive.OrderItems || [];
+    const parsedItems = itemsArr.map((it, idx) => ({
+      id: it.menuItem?.id || it.menuItemId || it.menu_item_id || it.id || `it-${idx}`,
+      name: it.menuItem?.name || it.name || it.menuItemName || 'Food Item',
+      variant: 'Regular',
+      quantity: it.quantity || 1,
+      price: Number(it.price || it.unitPrice || it.unit_price || it.menuItem?.price || 120.00),
+      image: it.menuItem?.image_url || it.image || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=200'
+    }));
+
+    const totalPaid = Number(foundActive.total ?? foundActive.total_amount ?? foundActive.totalAmount ?? 0);
+    const discountAmount = Number(foundActive.discount_amount ?? foundActive.discountAmount ?? foundActive.discount ?? 0);
+    const couponCode = foundActive.coupon_code || foundActive.couponCode || null;
+    const deliveryFee = Number(foundActive.delivery_fee ?? foundActive.deliveryFee ?? (totalPaid > 0 ? 30.00 : 0));
+    const platformFee = Number(foundActive.platform_fee ?? foundActive.platformFee ?? (totalPaid > 0 ? 5.00 : 0));
+    const subtotal = Number(foundActive.subtotal ?? Math.max(0, totalPaid - deliveryFee - platformFee + discountAmount));
+    const gst = Number(foundActive.tax ?? foundActive.gst ?? (Math.max(0, subtotal - discountAmount) * 0.05));
+
+    const addrObj = foundActive.deliveryAddress || foundActive.DeliveryAddress;
+    const deliveryAddressText = typeof foundActive.delivery_address === 'string' && foundActive.delivery_address
+      ? foundActive.delivery_address
+      : addrObj
+      ? `${addrObj.street || addrObj.address_line1 || 'Address'}, ${addrObj.city || 'Indore'}`
+      : 'Delivery Address Specified at Checkout';
+
+    const custCoords = (addrObj && addrObj.latitude && addrObj.longitude)
+      ? [parseFloat(addrObj.latitude), parseFloat(addrObj.longitude)]
+      : [22.7533, 75.8937];
+
+    const restCoords = (foundActive.restaurant?.latitude && foundActive.restaurant?.longitude)
+      ? [parseFloat(foundActive.restaurant.latitude), parseFloat(foundActive.restaurant.longitude)]
+      : [22.7196, 75.8577];
     
+    const driverUser = foundActive.deliveryPartner?.user || foundActive.DeliveryPartner?.User;
+    const partnerData = foundActive.deliveryPartner || foundActive.DeliveryPartner;
+    
+    return {
+      id: foundActive.id,
+      orderNumber: `ORD${String(foundActive.id).slice(0, 8).toUpperCase()}`,
+      status: st,
+      statusDisplay: formatStatusDisplay(st),
+      version: foundActive.version || 1,
+      created_at: foundActive.created_at || foundActive.createdAt || new Date().toISOString(),
+      estimatedTime: st === 'delivered' || st === 'completed' ? 'Delivered' : st === 'cancelled' ? 'Cancelled' : '25 – 35 minutes',
+      restaurant: {
+        id: foundActive.restaurant?.id || foundActive.Restaurant?.id || foundActive.restaurant_id || '1',
+        name: foundActive.restaurant?.name || foundActive.Restaurant?.name || "Orderly Gourmet Hub",
+        location: foundActive.restaurant?.address || foundActive.restaurant?.location || "Indore",
+        logo: foundActive.restaurant?.image_url || foundActive.restaurant?.image || foundActive.Restaurant?.image_url || "https://images.unsplash.com/photo-1550547660-d9450f859349?w=100",
+        phone: foundActive.restaurant?.phone_number || "+91 98345 67890"
+      },
+      driver: {
+        name: partnerData?.fullName || partnerData?.name || driverUser?.full_name || "Vikram Singh",
+        role: partnerData ? "Assigned Delivery Partner" : "Searching partner...",
+        rating: partnerData?.rating || "4.9",
+        deliveries: partnerData?.deliveries || "850+ deliveries",
+        phone: partnerData?.phone || driverUser?.phone_number || "+91 98456 78901",
+        vehicle_type: partnerData?.vehicle_type || "Motorcycle",
+        vehicle_number: partnerData?.vehicle_number || "MP-09-AB-1234",
+        avatar: partnerData?.image || partnerData?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100"
+      },
+      deliveryAddressText: deliveryAddressText,
+      deliveryAddress: addrObj,
+      mapData: {
+        restaurantCoords: restCoords,
+        customerCoords: custCoords
+      },
+      items: parsedItems,
+      subtotal: subtotal,
+      discountAmount: discountAmount,
+      couponCode: couponCode,
+      deliveryFee: deliveryFee,
+      platformFee: platformFee,
+      gst: gst,
+      totalPaid: totalPaid
+    };
+  };
+
+  const fetchOrders = async () => {
     try {
       setLoading(true);
       let rawOrders = [];
 
-      // If specific orderId requested, fetch single order details
-      if (urlOrderId) {
+      // 1. Fetch user orders from /orders/me or /orders
+      try {
+        const response = await axios.get('/orders/me');
+        if (response.data?.success && Array.isArray(response.data.data)) {
+          rawOrders = response.data.data;
+        }
+      } catch (err) {
         try {
-          const singleRes = await axios.get(`/orders/${urlOrderId}`);
-          if (singleRes.data.success && singleRes.data.data) {
-            rawOrders = [singleRes.data.data];
+          const fallbackRes = await axios.get('/orders');
+          if (fallbackRes.data?.success && Array.isArray(fallbackRes.data.data)) {
+            rawOrders = fallbackRes.data.data;
           }
-        } catch (singleErr) {
-          // fallback to /orders
+        } catch (e) {
+          // ignore
         }
       }
 
-      // If no single order found, fetch list
-      if (rawOrders.length === 0) {
+      // 2. If specific orderId requested, ensure that specific order is loaded & merged
+      if (urlOrderId) {
         try {
-          const response = await axios.get('/orders');
-          if (response.data.success && Array.isArray(response.data.data)) {
-            rawOrders = response.data.data;
+          const singleRes = await axios.get(`/orders/${urlOrderId}`);
+          if (singleRes.data?.success && singleRes.data.data) {
+            const singleOrder = singleRes.data.data;
+            const existingIdx = rawOrders.findIndex(r => r.id === singleOrder.id);
+            if (existingIdx !== -1) {
+              rawOrders[existingIdx] = { ...rawOrders[existingIdx], ...singleOrder };
+            } else {
+              rawOrders.unshift(singleOrder);
+            }
           }
-        } catch {
+        } catch (singleErr) {
           // fallback
         }
       }
 
       if (rawOrders.length > 0) {
-        const parsedOrders = rawOrders.map(foundActive => {
-          const st = (foundActive.status || 'placed').toLowerCase();
-          const itemsArr = foundActive.items || foundActive.OrderItems || [];
-          const parsedItems = itemsArr.map((it, idx) => ({
-            id: it.menuItem?.id || it.menu_item_id || it.id || `it-${idx}`,
-            name: it.menuItem?.name || it.name || 'Food Item',
-            variant: 'Regular',
-            quantity: it.quantity || 1,
-            price: Number(it.price || it.unit_price || it.menuItem?.price || 120.00),
-            image: it.menuItem?.image_url || it.image || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=200'
-          }));
+        const parsedOrders = rawOrders
+          .map(parseOrderRecord)
+          .filter(Boolean);
 
-          const totalPaid = Number(foundActive.total || foundActive.total_amount || 0);
-          const deliveryFee = Number(foundActive.delivery_fee || 30.00);
-          const platformFee = Number(foundActive.platform_fee || 5.00);
-          const subtotal = Number(foundActive.subtotal || Math.max(0, totalPaid - deliveryFee - platformFee));
-          const gst = Number(foundActive.tax || totalPaid * 0.05);
-
-          const addrObj = foundActive.deliveryAddress || foundActive.DeliveryAddress;
-          const deliveryAddressText = typeof foundActive.delivery_address === 'string' && foundActive.delivery_address
-            ? foundActive.delivery_address
-            : addrObj
-            ? `${addrObj.address_line1 || addrObj.street || 'Address'}, ${addrObj.city || 'Indore'}`
-            : 'Delivery Address Specified at Checkout';
-
-          const custCoords = (addrObj && addrObj.latitude && addrObj.longitude)
-            ? [parseFloat(addrObj.latitude), parseFloat(addrObj.longitude)]
-            : [22.5805, 88.3890];
-
-          const restCoords = (foundActive.restaurant?.latitude && foundActive.restaurant?.longitude)
-            ? [parseFloat(foundActive.restaurant.latitude), parseFloat(foundActive.restaurant.longitude)]
-            : [22.5726, 88.4149];
-          
-          const driverUser = foundActive.deliveryPartner?.user || foundActive.DeliveryPartner?.User;
-          
-          return {
-            id: foundActive.id,
-            orderNumber: `ORD${String(foundActive.id).slice(0, 8).toUpperCase()}`,
-            status: st,
-            statusDisplay: st === 'assigned' ? 'Driver Assigned' : st === 'picked_up' ? 'Food Picked Up' : st === 'out_for_delivery' ? 'Out for Delivery' : st === 'preparing' ? 'Preparing Food' : st === 'accepted' ? 'Confirmed' : st.charAt(0).toUpperCase() + st.slice(1).replace(/_/g, ' '),
-            created_at: foundActive.created_at || foundActive.createdAt,
-            estimatedTime: st === 'delivered' || st === 'completed' ? 'Delivered' : st === 'cancelled' ? 'Cancelled' : '25 – 35 minutes',
-            restaurant: {
-              name: foundActive.restaurant?.name || foundActive.Restaurant?.name || "Orderly Restaurant",
-              location: foundActive.restaurant?.address || foundActive.restaurant?.location || "Indore",
-              logo: foundActive.restaurant?.image_url || foundActive.Restaurant?.image_url || "https://images.unsplash.com/photo-1550547660-d9450f859349?w=100",
-              phone: foundActive.restaurant?.phone_number || "+91 98301 00000"
-            },
-            driver: {
-              name: driverUser?.full_name || "Assigned Driver",
-              role: foundActive.deliveryPartner ? "Your delivery partner" : "Searching partner...",
-              rating: "4.9",
-              deliveries: "850+ deliveries",
-              phone: driverUser?.phone_number || "+91 98300 00000",
-              avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100"
-            },
-            deliveryAddressText: deliveryAddressText,
-            deliveryAddress: addrObj,
-            mapData: {
-              restaurantCoords: restCoords,
-              customerCoords: custCoords
-            },
-            items: parsedItems,
-            subtotal: subtotal,
-            deliveryFee: deliveryFee,
-            platformFee: platformFee,
-            gst: gst,
-            totalPaid: totalPaid
-          };
-        });
+        // Sort strictly newest first (descending order by created_at)
+        parsedOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
         setActiveOrders(parsedOrders);
 
-        // If orderId is provided in URL, auto-select it
+        // If orderId is provided in URL, auto-select it; otherwise select newest (index 0)
         if (urlOrderId) {
           const matchIdx = parsedOrders.findIndex(o => String(o.id) === String(urlOrderId) || o.orderNumber.toLowerCase().includes(String(urlOrderId).toLowerCase()));
           if (matchIdx !== -1) {
             setSelectedOrderIndex(matchIdx);
+          } else {
+            setSelectedOrderIndex(0);
           }
+        } else {
+          setSelectedOrderIndex(0);
         }
       } else {
         setActiveOrders([]);
@@ -252,44 +336,82 @@ export default function OrderTracking() {
   useEffect(() => {
     fetchOrders();
 
-    socket.on('ORDER_STATUS_UPDATED', (data) => {
-      if (data?.status) {
-        message.info(`Order status updated to ${String(data.status).replace(/_/g, ' ')}`);
-      }
-      fetchOrders();
-    });
+    const handleStatusUpdate = (data) => {
+      if (!data?.orderId) return;
 
-    socket.on('DRIVER_LOCATION_UPDATED', (data) => {
+      setActiveOrders(prevOrders => {
+        const idx = prevOrders.findIndex(o => o.id === data.orderId);
+        if (idx === -1) {
+          // If a new order is updated that wasn't in our list, re-fetch
+          fetchOrders();
+          return prevOrders;
+        }
+
+        const existing = prevOrders[idx];
+        const currentLvl = getStatusLevel(existing.status);
+        const incomingLvl = getStatusLevel(data.status);
+
+        // MONOTONIC STATE GUARD: Never regress to older status level (unless explicitly cancelled)
+        if (data.status !== 'cancelled' && incomingLvl < currentLvl) {
+          console.warn(`[Tracking] Prevented state regression: ${data.status} (level ${incomingLvl}) vs active ${existing.status} (level ${currentLvl})`);
+          return prevOrders;
+        }
+
+        const updatedStatus = data.status;
+        const nextOrders = [...prevOrders];
+        nextOrders[idx] = {
+          ...existing,
+          status: updatedStatus,
+          statusDisplay: formatStatusDisplay(updatedStatus),
+          version: data.version || (existing.version + 1),
+          estimatedTime: updatedStatus === 'delivered' || updatedStatus === 'completed' ? 'Delivered' : updatedStatus === 'cancelled' ? 'Cancelled' : '20 – 30 mins',
+        };
+
+        message.info(`Order #${existing.orderNumber} updated: ${formatStatusDisplay(updatedStatus)}`);
+        return nextOrders;
+      });
+    };
+
+    const handleDriverLocation = (data) => {
       if (data && data.latitude && data.longitude) {
         setSocketDriverPos([parseFloat(data.latitude), parseFloat(data.longitude)]);
       }
-    });
+    };
+
+    socket.on('ORDER_STATUS_UPDATED', handleStatusUpdate);
+    socket.on('DRIVER_LOCATION_UPDATED', handleDriverLocation);
 
     return () => {
-      socket.off('ORDER_STATUS_UPDATED');
-      socket.off('DRIVER_LOCATION_UPDATED');
+      socket.off('ORDER_STATUS_UPDATED', handleStatusUpdate);
+      socket.off('DRIVER_LOCATION_UPDATED', handleDriverLocation);
     };
   }, [token, urlOrderId]);
 
-  // Live Driver Real-Time Movement simulation ticker
+  const currentOrder = activeOrders[selectedOrderIndex] || activeOrders[0] || null;
+  const currentLevel = currentOrder ? getStatusLevel(currentOrder.status) : 1;
+
+  // Live Driver Real-Time Movement ONLY runs when status is out_for_delivery / in_transit / picked_up (level 5)
   useEffect(() => {
-    if (!isLiveSimulating) return;
+    if (currentLevel !== 5) {
+      if (currentLevel < 5) setTrackProgress(0.0);
+      if (currentLevel >= 6) setTrackProgress(1.0);
+      return;
+    }
+
+    // Set initial out-for-delivery progress if at start
+    setTrackProgress(prev => (prev <= 0 ? 0.05 : prev));
 
     const interval = setInterval(() => {
       setTrackProgress(prev => {
-        const next = prev + 0.004 * simSpeed;
-        if (next >= 1.0) {
-          setIsLiveSimulating(false);
-          return 1.0;
+        if (prev >= 0.96) {
+          return 0.96; // Driver is close at delivery doorstep awaiting final completion
         }
-        return next;
+        return prev + 0.005;
       });
-    }, 800);
+    }, 2000);
 
     return () => clearInterval(interval);
-  }, [isLiveSimulating, simSpeed]);
-
-  const currentOrder = activeOrders[selectedOrderIndex] || activeOrders[0];
+  }, [currentLevel]);
 
   if (loading) {
     return (
@@ -311,7 +433,7 @@ export default function OrderTracking() {
         <div className="space-y-2">
           <h2 className="text-2xl font-black text-neutral-900 tracking-tight">No Active Orders to Track</h2>
           <p className="text-neutral-500 text-sm max-w-md mx-auto leading-relaxed">
-            You don't have any placed or active orders right now. Explore top local restaurants and place an order to track live delivery in real time!
+            You don't have any active orders right now. Explore top local restaurants and place an order to track live delivery in real time!
           </p>
         </div>
 
@@ -334,7 +456,6 @@ export default function OrderTracking() {
     );
   }
 
-  const currentLevel = getStatusLevel(currentOrder.status);
   const progressWidth = currentLevel === 1 ? '0%' : currentLevel === 2 ? '20%' : currentLevel === 3 ? '40%' : currentLevel === 4 ? '60%' : currentLevel === 5 ? '80%' : '100%';
 
   const handleCopyOrderNumber = (num) => {
@@ -348,7 +469,7 @@ export default function OrderTracking() {
       dispatch(addToCartAsync({
         menu_item_id: item.id,
         quantity: item.quantity || 1,
-        restaurant_id: currentOrder.restaurant?.id || 1,
+        restaurant_id: currentOrder.restaurant?.id || '1',
         item: {
           id: item.id,
           name: item.name,
@@ -420,18 +541,36 @@ export default function OrderTracking() {
     currentOrder.mapData?.customerCoords
   );
 
-  const currentDriverPos = socketDriverPos || interpolatePosition(routeWaypoints, trackProgress);
-  const distanceRemainingKm = Math.max(0, (2.8 * (1 - trackProgress))).toFixed(1);
-  const etaMinutesRemaining = Math.max(1, Math.round(25 * (1 - trackProgress)));
+  // Determine driver position based on order lifecycle
+  let currentDriverPos = null;
+  if (currentLevel >= 6) {
+    currentDriverPos = currentOrder.mapData?.customerCoords || [22.7533, 75.8937];
+  } else if (currentLevel === 5) {
+    currentDriverPos = socketDriverPos || interpolatePosition(routeWaypoints, trackProgress);
+  } else if (currentLevel === 4) {
+    currentDriverPos = socketDriverPos || currentOrder.mapData?.restaurantCoords || [22.7196, 75.8577];
+  } else {
+    currentDriverPos = null;
+  }
 
-  const liveDistanceText = trackProgress >= 1.0
-    ? `${currentOrder.driver.name} has arrived at destination! 🎉`
-    : `${currentOrder.driver.name} is on the way • ${distanceRemainingKm} km away (${etaMinutesRemaining} mins)`;
+  const distanceRemainingKm = currentLevel >= 6 ? '0.0' : Math.max(0.1, (2.8 * (1 - trackProgress))).toFixed(1);
+  const etaMinutesRemaining = currentLevel >= 6 ? 0 : Math.max(1, Math.round(25 * (1 - trackProgress)));
+
+  const liveDistanceText =
+    currentLevel >= 6
+      ? `Order Delivered at destination! 🎉`
+      : currentLevel === 5
+      ? `${currentOrder.driver?.name || 'Delivery partner'} is on the way • ${distanceRemainingKm} km away (${etaMinutesRemaining} mins)`
+      : currentLevel === 4
+      ? `${currentOrder.driver?.name || 'Delivery partner'} assigned • Reaching restaurant for pickup`
+      : `Order is being prepared in kitchen • Live GPS activates once out for delivery`;
+
+  const mapCenterPos = currentDriverPos || currentOrder.mapData?.restaurantCoords || [22.7196, 75.8577];
 
   const dynamicBounds = [
-    currentOrder.mapData.restaurantCoords,
-    currentDriverPos,
-    currentOrder.mapData.customerCoords
+    currentOrder.mapData?.restaurantCoords || [22.7196, 75.8577],
+    ...(currentDriverPos ? [currentDriverPos] : []),
+    currentOrder.mapData?.customerCoords || [22.7533, 75.8937]
   ];
 
   return (
@@ -455,16 +594,25 @@ export default function OrderTracking() {
               {currentLevel === 6 ? 'Order Delivered!' : currentLevel === 0 ? 'Order Cancelled' : currentLevel === 4 ? 'Delivery Partner Assigned' : currentLevel === 5 ? 'Your Order is Out for Delivery!' : 'Your Order is Being Processed'}
             </h1>
             <p className="text-neutral-300 mt-1 max-w-xl text-xs md:text-sm leading-relaxed font-medium">
-              Real-time updates from {currentOrder.restaurant.name}.
+              Real-time updates from {currentOrder.restaurant?.name || 'Restaurant'}.
             </p>
           </div>
 
-          <div className="bg-neutral-900/80 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-neutral-700/60 shadow-lg text-xs font-bold text-neutral-200 flex items-center gap-3">
-            <span className="text-orange-400 font-mono">#{currentOrder.orderNumber}</span>
-            <span className="text-neutral-500">•</span>
-            <span className="px-2.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 uppercase text-[10px] font-black tracking-wider">
-              {currentOrder.statusDisplay}
-            </span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate('/customer/orders')}
+              className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-2xl border border-white/20 text-xs font-bold text-white flex items-center gap-2 transition-all cursor-pointer"
+            >
+              <UnorderedListOutlined /> All Orders ({activeOrders.length})
+            </button>
+
+            <div className="bg-neutral-900/80 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-neutral-700/60 shadow-lg text-xs font-bold text-neutral-200 flex items-center gap-3">
+              <span className="text-orange-400 font-mono">#{currentOrder.orderNumber}</span>
+              <span className="text-neutral-500">•</span>
+              <span className="px-2.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 uppercase text-[10px] font-black tracking-wider">
+                {currentOrder.statusDisplay}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -476,7 +624,7 @@ export default function OrderTracking() {
         {activeOrders.length > 1 && (
           <div className="flex items-center gap-2.5 overflow-x-auto pb-2 border-b border-neutral-200">
             <span className="text-xs font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">
-              Active Orders:
+              Your Orders:
             </span>
             {activeOrders.map((ord, idx) => (
               <button
@@ -510,17 +658,17 @@ export default function OrderTracking() {
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 rounded-2xl bg-orange-50 overflow-hidden flex-shrink-0 border border-neutral-200/60 shadow-2xs">
                     <img
-                      src={currentOrder.restaurant.logo}
-                      alt={currentOrder.restaurant.name}
+                      src={currentOrder.restaurant?.logo}
+                      alt={currentOrder.restaurant?.name}
                       className="w-full h-full object-cover"
                     />
                   </div>
 
                   <div>
                     <h3 className="font-extrabold text-neutral-900 text-xl leading-tight">
-                      {currentOrder.restaurant.name}
+                      {currentOrder.restaurant?.name}
                     </h3>
-                    <p className="text-xs text-neutral-400 font-medium">{currentOrder.restaurant.location}</p>
+                    <p className="text-xs text-neutral-400 font-medium">{currentOrder.restaurant?.location}</p>
 
                     <div className="flex items-center gap-1.5 mt-1">
                       <span className="text-xs font-semibold text-neutral-400">Order ID: #{currentOrder.orderNumber}</span>
@@ -538,14 +686,14 @@ export default function OrderTracking() {
                 {/* Call & Chat Action Buttons */}
                 <div className="flex items-center gap-3 self-start sm:self-center">
                   <a
-                    href={`tel:${currentOrder.restaurant.phone}`}
+                    href={`tel:${currentOrder.restaurant?.phone || '+919834567890'}`}
                     className="px-4 py-2 bg-white border border-orange-400 text-orange-600 font-bold text-xs rounded-xl hover:bg-orange-50 transition-colors flex items-center gap-2 shadow-2xs"
                   >
                     <PhoneOutlined /> Call Restaurant
                   </a>
 
                   <button
-                    onClick={() => message.info("Opening Chat Support...")}
+                    onClick={() => message.info("Opening Orderly Customer Support...")}
                     className="px-4 py-2 bg-white border border-orange-400 text-orange-600 font-bold text-xs rounded-xl hover:bg-orange-50 transition-colors flex items-center gap-2 shadow-2xs cursor-pointer"
                   >
                     <MessageOutlined /> Support
@@ -709,78 +857,117 @@ export default function OrderTracking() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-black text-neutral-900 text-xl">Live Location</h3>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-extrabold border border-emerald-300">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                      LIVE GPS CONNECTED
-                    </span>
+                    {currentLevel === 5 ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-extrabold border border-emerald-300">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                        LIVE GPS CONNECTED
+                      </span>
+                    ) : currentLevel === 4 ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[11px] font-extrabold border border-blue-300">
+                        <span className="w-2 h-2 rounded-full bg-blue-500" />
+                        DRIVER ASSIGNED
+                      </span>
+                    ) : currentLevel >= 6 ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-extrabold border border-emerald-300">
+                        <CheckCircleFilled /> DELIVERED
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[11px] font-extrabold border border-amber-300">
+                        <ClockCircleOutlined /> PREPARING ORDER
+                      </span>
+                    )}
                   </div>
-                  <p className="text-xs text-neutral-400 font-medium">Track your delivery partner moving in real time</p>
+                  <p className="text-xs text-neutral-400 font-medium">
+                    {currentLevel === 5
+                      ? 'Track your delivery partner moving in real time'
+                      : currentLevel === 4
+                      ? 'Delivery partner is reaching restaurant for pickup'
+                      : currentLevel >= 6
+                      ? 'Your order has been delivered successfully'
+                      : 'Live GPS tracking will activate once delivery partner is out for delivery'}
+                  </p>
                 </div>
 
-                {/* Interactive Simulation Controls */}
-                <div className="flex items-center gap-2 bg-neutral-100 p-1.5 rounded-xl border border-neutral-200 text-xs">
-                  <button
-                    onClick={() => setIsLiveSimulating(!isLiveSimulating)}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
-                      isLiveSimulating
-                        ? 'bg-orange-500 text-white shadow-sm'
-                        : 'bg-white text-neutral-700 hover:bg-neutral-200'
-                    }`}
-                  >
-                    {isLiveSimulating ? '⏸ Pause' : '▶ Live Simulate'}
-                  </button>
-
-                  <button
-                    onClick={() => setSimSpeed(prev => (prev === 1 ? 2 : prev === 2 ? 4 : 1))}
-                    className="px-2.5 py-1.5 bg-white hover:bg-neutral-200 rounded-lg font-extrabold text-neutral-700 border border-neutral-200 cursor-pointer"
-                  >
-                    {simSpeed}x Speed
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setTrackProgress(0.0);
-                      setIsLiveSimulating(true);
-                    }}
-                    className="px-2 py-1.5 bg-white hover:bg-neutral-200 rounded-lg text-neutral-600 border border-neutral-200 cursor-pointer"
-                  >
-                    <ReloadOutlined />
-                  </button>
+                <div className="flex items-center gap-2">
+                  <div className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-2 ${
+                    currentLevel === 5
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : currentLevel === 4
+                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                      : currentLevel >= 6
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-neutral-50 text-neutral-600 border-neutral-200'
+                  }`}>
+                    {currentLevel === 5 ? (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                        <span>Live Delivery In Transit</span>
+                      </>
+                    ) : currentLevel === 4 ? (
+                      <>
+                        <CarOutlined className="text-blue-600" />
+                        <span>Driver at Restaurant</span>
+                      </>
+                    ) : currentLevel >= 6 ? (
+                      <>
+                        <CheckCircleFilled className="text-emerald-600" />
+                        <span>Order Completed</span>
+                      </>
+                    ) : (
+                      <>
+                        <ClockCircleOutlined className="text-amber-500" />
+                        <span>Kitchen Preparing</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
               {/* Map Container */}
               <div className="h-[380px] rounded-2xl overflow-hidden relative border border-neutral-200/80 shadow-inner z-0">
                 
-                {/* Floating Driver Pill Overlay */}
-                <div className="absolute top-4 right-4 z-20 bg-white/95 backdrop-blur-md border border-neutral-200/80 rounded-2xl p-3.5 shadow-lg flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-full bg-neutral-100 overflow-hidden border border-neutral-200 flex-shrink-0">
-                    <img src={currentOrder.driver.avatar} alt={currentOrder.driver.name} className="w-full h-full object-cover" />
+                {/* Floating Driver / Restaurant Info Overlay */}
+                {currentLevel >= 4 ? (
+                  <div className="absolute top-4 right-4 z-20 bg-white/95 backdrop-blur-md border border-neutral-200/80 rounded-2xl p-3.5 shadow-lg flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-full bg-neutral-100 overflow-hidden border border-neutral-200 flex-shrink-0">
+                      <img src={currentOrder.driver?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100"} alt={currentOrder.driver?.name} className="w-full h-full object-cover" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-neutral-900 text-xs">{currentOrder.driver?.name}</h4>
+                      <p className="text-[11px] text-neutral-400 font-medium">{currentOrder.driver?.role} • {currentOrder.driver?.vehicle_type} ({currentOrder.driver?.vehicle_number})</p>
+                      <p className="text-[11px] font-bold text-amber-500 flex items-center gap-1 mt-0.5">
+                        <StarFilled /> {currentOrder.driver?.rating} <span className="text-neutral-400 font-normal">({currentOrder.driver?.deliveries})</span>
+                      </p>
+                    </div>
+                    <a
+                      href={`tel:${currentOrder.driver?.phone || '+919845678901'}`}
+                      className="w-9 h-9 rounded-full bg-orange-50 text-orange-600 hover:bg-orange-500 hover:text-white flex items-center justify-center transition-colors ml-2 shadow-2xs"
+                    >
+                      <PhoneOutlined className="text-sm" />
+                    </a>
                   </div>
-                  <div>
-                    <h4 className="font-extrabold text-neutral-900 text-xs">{currentOrder.driver.name}</h4>
-                    <p className="text-[11px] text-neutral-400 font-medium">{currentOrder.driver.role}</p>
-                    <p className="text-[11px] font-bold text-amber-500 flex items-center gap-1 mt-0.5">
-                      <StarFilled /> {currentOrder.driver.rating} <span className="text-neutral-400 font-normal">({currentOrder.driver.deliveries})</span>
-                    </p>
+                ) : (
+                  <div className="absolute top-4 right-4 z-20 bg-white/95 backdrop-blur-md border border-neutral-200/80 rounded-2xl p-3.5 shadow-lg flex items-center gap-3 max-w-xs">
+                    <div className="w-10 h-10 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center text-lg font-bold border border-orange-200/60 flex-shrink-0 shadow-2xs">
+                      🍴
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-neutral-900 text-xs">{currentOrder.restaurant?.name || 'Restaurant'}</h4>
+                      <p className="text-[11px] text-neutral-400 font-medium">Preparing fresh food in kitchen</p>
+                      <p className="text-[10px] text-orange-600 font-bold mt-0.5">Live tracking activates at pickup</p>
+                    </div>
                   </div>
-                  <a
-                    href={`tel:${currentOrder.driver.phone}`}
-                    className="w-9 h-9 rounded-full bg-orange-50 text-orange-600 hover:bg-orange-500 hover:text-white flex items-center justify-center transition-colors ml-2 shadow-2xs"
-                  >
-                    <PhoneOutlined className="text-sm" />
-                  </a>
-                </div>
+                )}
 
                 {/* Floating Driver Status Overlay Badge */}
                 <div className="absolute bottom-4 left-4 z-20 bg-white/95 backdrop-blur-md border border-neutral-200/90 px-4 py-2.5 rounded-xl shadow-md text-xs font-extrabold text-neutral-800 flex items-center gap-2.5 border-l-4 border-l-orange-500">
-                  <div className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-ping" />
+                  <div className={`w-2.5 h-2.5 rounded-full ${currentLevel === 5 ? 'bg-orange-500 animate-ping' : currentLevel >= 6 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                   <span>{liveDistanceText}</span>
                 </div>
 
                 {/* Leaflet Real Interactive Map */}
                 <MapContainer
-                  center={currentDriverPos}
+                  center={mapCenterPos}
                   zoom={14}
                   scrollWheelZoom={false}
                   className="w-full h-full z-0"
@@ -792,13 +979,15 @@ export default function OrderTracking() {
                   <MapRecenter bounds={dynamicBounds} />
 
                   {/* Restaurant Marker */}
-                  <Marker position={currentOrder.mapData.restaurantCoords} icon={restaurantPinIcon} />
+                  <Marker position={currentOrder.mapData?.restaurantCoords || [22.7196, 75.8577]} icon={restaurantPinIcon} />
                   
-                  {/* Delivery Driver Marker (Moving Live) */}
-                  <Marker position={currentDriverPos} icon={driverPinIcon} />
+                  {/* Delivery Driver Marker (rendered when driver is active / on way) */}
+                  {currentDriverPos && (
+                    <Marker position={currentDriverPos} icon={driverPinIcon} />
+                  )}
 
                   {/* Destination Customer Marker */}
-                  <Marker position={currentOrder.mapData.customerCoords} icon={destinationPinIcon} />
+                  <Marker position={currentOrder.mapData?.customerCoords || [22.7533, 75.8937]} icon={destinationPinIcon} />
 
                   {/* Full Dotted Route Path */}
                   <Polyline
@@ -808,12 +997,23 @@ export default function OrderTracking() {
                     weight={4}
                   />
 
-                  {/* Live Traveled Route Path */}
-                  <Polyline
-                    positions={routeWaypoints.slice(0, Math.max(2, Math.ceil(trackProgress * routeWaypoints.length)))}
-                    color="#FF5722"
-                    weight={5}
-                  />
+                  {/* Live Traveled Route Path - only shown when out for delivery */}
+                  {currentLevel === 5 && (
+                    <Polyline
+                      positions={routeWaypoints.slice(0, Math.max(2, Math.ceil(trackProgress * routeWaypoints.length)))}
+                      color="#FF5722"
+                      weight={5}
+                    />
+                  )}
+
+                  {/* Completed Green Traveled Route Path when delivered */}
+                  {currentLevel >= 6 && (
+                    <Polyline
+                      positions={routeWaypoints}
+                      color="#10B981"
+                      weight={5}
+                    />
+                  )}
                 </MapContainer>
 
               </div>
@@ -857,8 +1057,73 @@ export default function OrderTracking() {
 
           </div>
 
-          {/* ── RIGHT COLUMN (REAL ORDER DETAILS SUMMARY) ── */}
-          <div className="lg:col-span-4">
+          {/* ── RIGHT COLUMN (REAL ORDER DETAILS SUMMARY & PREVIOUS ORDERS) ── */}
+          <div className="lg:col-span-4 space-y-6">
+            
+            {/* ── PREVIOUS & ALL ORDERS CARD (Shown when user has multiple orders) ── */}
+            {activeOrders.length > 1 && (
+              <div className="bg-white rounded-3xl border border-neutral-200/90 p-5 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <UnorderedListOutlined className="text-orange-500 text-base" />
+                    <h3 className="font-black text-neutral-900 text-sm">Your Orders ({activeOrders.length})</h3>
+                  </div>
+                  <span className="text-[11px] font-semibold text-neutral-400">Newest first</span>
+                </div>
+
+                <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
+                  {activeOrders.map((ord, idx) => {
+                    const isSelected = selectedOrderIndex === idx;
+
+                    return (
+                      <div
+                        key={ord.id || idx}
+                        onClick={() => {
+                          setSelectedOrderIndex(idx);
+                          navigate(`/customer/tracking?orderId=${ord.id}`, { replace: true });
+                        }}
+                        className={`p-3 rounded-2xl border transition-all cursor-pointer text-left ${
+                          isSelected
+                            ? 'bg-orange-50/70 border-orange-500 shadow-xs ring-1 ring-orange-500/30'
+                            : 'bg-neutral-50/60 hover:bg-neutral-100/80 border-neutral-200/80 hover:border-neutral-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-extrabold text-xs text-neutral-900">
+                              #{ord.orderNumber}
+                            </span>
+                            {isSelected && (
+                              <span className="px-1.5 py-0.5 bg-orange-600 text-white font-black text-[10px] rounded-md uppercase tracking-wider">
+                                Tracking
+                              </span>
+                            )}
+                          </div>
+                          <span className={`px-2 py-0.5 font-bold text-[10px] rounded-full border ${getStatusBadgeClass(ord.status)}`}>
+                            {ord.statusDisplay}
+                          </span>
+                        </div>
+
+                        <div className="mt-1.5 flex items-center justify-between text-xs">
+                          <span className="font-semibold text-neutral-700 truncate max-w-[160px]">
+                            {ord.restaurant?.name || 'Restaurant'}
+                          </span>
+                          <span className="font-black text-neutral-900">
+                            ₹{(ord.totalPaid || 0).toFixed(2)}
+                          </span>
+                        </div>
+
+                        <div className="mt-1 flex items-center justify-between text-[11px] text-neutral-400 font-medium">
+                          <span>{ord.items?.length || 0} {ord.items?.length === 1 ? 'item' : 'items'}</span>
+                          <span>{formatOrderDateTime(ord.created_at)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-3xl border border-neutral-200/90 p-6 shadow-2xs space-y-6 sticky top-24">
               
               {/* Card Header: Order Details & Dynamic Status Badge */}
@@ -889,13 +1154,13 @@ export default function OrderTracking() {
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-orange-50 overflow-hidden flex-shrink-0 border border-neutral-200/60 shadow-2xs">
-                    <img src={currentOrder.restaurant.logo} alt={currentOrder.restaurant.name} className="w-full h-full object-cover" />
+                    <img src={currentOrder.restaurant?.logo} alt={currentOrder.restaurant?.name} className="w-full h-full object-cover" />
                   </div>
                   <div>
                     <h4 className="font-extrabold text-neutral-900 text-xs group-hover:text-orange-600 transition-colors">
-                      {currentOrder.restaurant.name}
+                      {currentOrder.restaurant?.name}
                     </h4>
-                    <p className="text-[11px] text-neutral-400 font-medium">{currentOrder.restaurant.location}</p>
+                    <p className="text-[11px] text-neutral-400 font-medium">{currentOrder.restaurant?.location}</p>
                   </div>
                 </div>
 
@@ -915,9 +1180,9 @@ export default function OrderTracking() {
 
               {/* Ordered Items List */}
               <div className="space-y-3">
-                <h4 className="text-xs font-black text-neutral-800 uppercase tracking-wider">Ordered Items ({currentOrder.items.length})</h4>
+                <h4 className="text-xs font-black text-neutral-800 uppercase tracking-wider">Ordered Items ({currentOrder.items?.length || 0})</h4>
                 <div className="divide-y divide-neutral-100">
-                  {currentOrder.items.map((item, idx) => (
+                  {(currentOrder.items || []).map((item, idx) => (
                     <div key={idx} className="py-3 flex items-center justify-between gap-3 first:pt-0 last:pb-0">
                       <div className="flex items-center gap-3">
                         <div className="w-12 h-12 rounded-xl bg-neutral-100 overflow-hidden border border-neutral-200/60 flex-shrink-0">
@@ -931,7 +1196,7 @@ export default function OrderTracking() {
 
                       <div className="flex items-center gap-3 flex-shrink-0">
                         <span className="text-xs font-bold text-neutral-400">x {item.quantity}</span>
-                        <span className="font-extrabold text-neutral-900 text-xs">₹{item.price.toFixed(2)}</span>
+                        <span className="font-extrabold text-neutral-900 text-xs">₹{(item.price || 0).toFixed(2)}</span>
                       </div>
                     </div>
                   ))}
@@ -942,26 +1207,32 @@ export default function OrderTracking() {
               <div className="bg-neutral-50/70 border border-neutral-200/80 rounded-2xl p-4 space-y-2 text-xs text-neutral-600">
                 <div className="flex justify-between">
                   <span>Subtotal</span>
-                  <span className="font-bold text-neutral-800">₹{currentOrder.subtotal.toFixed(2)}</span>
+                  <span className="font-bold text-neutral-800">₹{(currentOrder.subtotal || 0).toFixed(2)}</span>
                 </div>
+                {currentOrder.discountAmount > 0 && (
+                  <div className="flex justify-between text-emerald-600 font-bold">
+                    <span>Promo Discount ({currentOrder.couponCode || 'PROMO'})</span>
+                    <span>-₹{Number(currentOrder.discountAmount).toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span>Delivery Fee</span>
-                  <span className="font-bold text-neutral-800">₹{currentOrder.deliveryFee.toFixed(2)}</span>
+                  <span className="font-bold text-neutral-800">₹{(currentOrder.deliveryFee || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Platform Fee</span>
-                  <span className="font-bold text-neutral-800">₹{currentOrder.platformFee.toFixed(2)}</span>
+                  <span className="font-bold text-neutral-800">₹{(currentOrder.platformFee || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>GST (5%)</span>
-                  <span className="font-bold text-neutral-800">₹{currentOrder.gst.toFixed(2)}</span>
+                  <span className="font-bold text-neutral-800">₹{(currentOrder.gst || 0).toFixed(2)}</span>
                 </div>
 
                 <div className="h-px bg-neutral-200 my-2" />
 
                 <div className="flex justify-between items-center text-neutral-900 text-sm">
                   <span className="font-bold">Total Paid</span>
-                  <span className="font-black text-base text-neutral-900">₹{currentOrder.totalPaid.toFixed(2)}</span>
+                  <span className="font-black text-base text-neutral-900">₹{(currentOrder.totalPaid || 0).toFixed(2)}</span>
                 </div>
               </div>
 

@@ -95,6 +95,14 @@ export default function Navbar({ activeOrdersCount = 0 }) {
   const cartCount = items.reduce((t, i) => t + (i.quantity || 1), 0);
 
   const isUserLoggedIn = Boolean(isAuthenticated && (user || profile));
+  const hasGuestSession = Boolean(
+    typeof window !== 'undefined' &&
+    (sessionStorage.getItem('guest_token') ||
+     localStorage.getItem('guest_token') ||
+     sessionStorage.getItem('guest_session_id') ||
+     localStorage.getItem('guest_session_id'))
+  );
+
   const rawName = user?.full_name || profile?.full_name || user?.name || profile?.name || user?.email || '';
   const displayName = isUserLoggedIn
     ? (rawName.split(' ')[0] || user?.email?.split('@')[0] || 'User')
@@ -110,22 +118,35 @@ export default function Navbar({ activeOrdersCount = 0 }) {
 
   const handleLogout = () => {
     dispatch(logout());
-    dispatch(resetCartState());
-    setDropdownOpen(false);
-    navigate('/login');
-  };
-
-  const handleStartFreshGuestSession = () => {
     sessionStorage.removeItem('guest_token');
     localStorage.removeItem('guest_token');
     sessionStorage.removeItem('guest_session_id');
+    sessionStorage.removeItem('last_guest_order_id');
+    localStorage.removeItem('last_guest_order_id');
+    sessionStorage.removeItem('orderly_guest_id');
+    localStorage.removeItem('orderly_guest_id');
     dispatch(resetCartState());
     setDropdownOpen(false);
-    navigate('/login');
+    window.location.href = '/register';
+  };
+
+  const handleGuestSignOut = () => {
+    sessionStorage.removeItem('guest_token');
+    localStorage.removeItem('guest_token');
+    sessionStorage.removeItem('guest_session_id');
+    sessionStorage.removeItem('last_guest_order_id');
+    localStorage.removeItem('last_guest_order_id');
+    sessionStorage.removeItem('orderly_guest_id');
+    localStorage.removeItem('orderly_guest_id');
+    dispatch(resetCartState());
+    setDropdownOpen(false);
+    window.location.href = '/register';
   };
 
   const isActive = (path) => {
-    if (path === '/customer') return location.pathname === '/customer';
+    if (path === '/' || path === '/customer') {
+      return location.pathname === '/' || location.pathname === '/customer';
+    }
     return location.pathname.startsWith(path);
   };
 
@@ -140,8 +161,9 @@ export default function Navbar({ activeOrdersCount = 0 }) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  const homePath = isUserLoggedIn ? '/customer' : '/';
   const navLinks = [
-    { name: 'Home',        path: '/customer',             icon: <IconHome /> },
+    { name: 'Home',        path: homePath,                icon: <IconHome /> },
     { name: 'Menu',        path: '/customer/menu',        icon: <IconMenu /> },
     { name: 'Restaurants', path: '/customer/restaurants', icon: <IconFork /> },
     { name: 'Partners',    path: '/customer/partners',    icon: <IconPartner /> },
@@ -156,7 +178,7 @@ export default function Navbar({ activeOrdersCount = 0 }) {
         <div className="flex items-center justify-between h-16">
 
           {/* ── Logo ── */}
-          <BrandLogo variant="orange" size="md" to="/customer" />
+          <BrandLogo variant="orange" size="md" to={isUserLoggedIn ? "/customer" : "/"} />
 
           {/* ── Desktop Nav Links (center) ── */}
           <div className="hidden md:flex items-center gap-1">
@@ -201,113 +223,128 @@ export default function Navbar({ activeOrdersCount = 0 }) {
               )}
             </Link>
 
-            {/* User Dropdown */}
-            <div className="relative hidden sm:block" ref={dropdownRef}>
-              <button
-                onClick={() => setDropdownOpen((o) => !o)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-all border border-neutral-200/70 shadow-sm hover:shadow"
-              >
-                {/* Avatar: Google profile pic OR First letter circle (R for Rajesh, G for Guest) */}
-                {profileImage ? (
-                  <img
-                    src={profileImage}
-                    alt={displayName}
-                    onError={() => setImgError(true)}
-                    className="w-7 h-7 rounded-full object-cover border border-neutral-200"
-                  />
-                ) : (
-                  <span
-                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${
-                      isUserLoggedIn ? 'bg-[#0284c7]' : 'bg-[#ea580c]'
-                    }`}
-                  >
-                    {userInitial}
-                  </span>
-                )}
-                <span className="font-semibold text-neutral-800 text-xs sm:text-sm">{displayName}</span>
-                <span className={`text-neutral-400 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`}>
-                  <IconChevron />
-                </span>
-              </button>
-
-              {/* Dropdown Panel */}
-              {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-52 bg-white border border-neutral-100 rounded-2xl shadow-xl py-1.5 z-50 animate-fade-in divide-y divide-neutral-100">
-                  <div className="px-4 py-2.5 bg-neutral-50/80 rounded-t-2xl">
-                    <div className="text-xs font-bold text-neutral-900 truncate">{rawName || 'Guest User'}</div>
-                    <div className="text-[11px] text-neutral-500 font-medium truncate">
-                      {isUserLoggedIn ? (user?.email || 'Registered Customer') : 'Guest Session Active'}
-                    </div>
-                  </div>
-
-                  {isUserLoggedIn ? (
-                    <div>
-                      <Link
-                        to="/customer/profile"
-                        onClick={() => setDropdownOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-2.5 text-xs sm:text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
-                      >
-                        <span className="text-neutral-400"><IconProfile /></span>
-                        My Profile
-                      </Link>
-                      <Link
-                        to="/customer/orders"
-                        onClick={() => setDropdownOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-2.5 text-xs sm:text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
-                      >
-                        <span className="text-neutral-400">
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
-                            <rect x="9" y="3" width="6" height="4" rx="1"/>
-                            <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
-                          </svg>
-                        </span>
-                        My Orders
-                      </Link>
-                    </div>
+            {/* User Dropdown or Sign In / Register buttons */}
+            {isUserLoggedIn || hasGuestSession ? (
+              <div className="relative hidden sm:block" ref={dropdownRef}>
+                <button
+                  onClick={() => setDropdownOpen((o) => !o)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-all border border-neutral-200/70 shadow-sm hover:shadow"
+                >
+                  {/* Avatar: Google profile pic OR First letter circle (R for Rajesh, G for Guest) */}
+                  {profileImage ? (
+                    <img
+                      src={profileImage}
+                      alt={displayName}
+                      onError={() => setImgError(true)}
+                      className="w-7 h-7 rounded-full object-cover border border-neutral-200"
+                    />
                   ) : (
-                    <div>
-                      <Link
-                        to="/customer/tracking"
-                        onClick={() => setDropdownOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-2.5 text-xs sm:text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
-                      >
-                        <span className="text-neutral-400"><IconClock /></span>
-                        Track Orders
-                      </Link>
-                      <Link
-                        to="/login"
-                        onClick={() => setDropdownOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-2.5 text-xs sm:text-sm text-orange-600 font-bold hover:bg-orange-50 transition-colors"
-                      >
-                        <IconUser />
-                        Sign In / Register
-                      </Link>
-                    </div>
+                    <span
+                      className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${
+                        isUserLoggedIn ? 'bg-[#0284c7]' : 'bg-[#ea580c]'
+                      }`}
+                    >
+                      {userInitial}
+                    </span>
                   )}
+                  <span className="font-semibold text-neutral-800 text-xs sm:text-sm">{displayName}</span>
+                  <span className={`text-neutral-400 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`}>
+                    <IconChevron />
+                  </span>
+                </button>
 
-                  <div>
+                {/* Dropdown Panel */}
+                {dropdownOpen && (
+                  <div className="absolute right-0 mt-2 w-52 bg-white border border-neutral-100 rounded-2xl shadow-xl py-1.5 z-50 animate-fade-in divide-y divide-neutral-100">
+                    <div className="px-4 py-2.5 bg-neutral-50/80 rounded-t-2xl">
+                      <div className="text-xs font-bold text-neutral-900 truncate">{rawName || 'Guest User'}</div>
+                      <div className="text-[11px] text-neutral-500 font-medium truncate">
+                        {isUserLoggedIn ? (user?.email || 'Registered Customer') : 'Guest Session Active'}
+                      </div>
+                    </div>
+
                     {isUserLoggedIn ? (
-                      <button
-                        onClick={handleLogout}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs sm:text-sm text-red-600 hover:bg-red-50 transition-colors"
-                      >
-                        <span className="text-red-500"><IconLogout /></span>
-                        Logout
-                      </button>
+                      <div>
+                        <Link
+                          to="/customer/profile"
+                          onClick={() => setDropdownOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-xs sm:text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
+                        >
+                          <span className="text-neutral-400"><IconProfile /></span>
+                          My Profile
+                        </Link>
+                        <Link
+                          to="/customer/orders"
+                          onClick={() => setDropdownOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-xs sm:text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
+                        >
+                          <span className="text-neutral-400">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+                              <rect x="9" y="3" width="6" height="4" rx="1"/>
+                              <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
+                            </svg>
+                          </span>
+                          My Orders
+                        </Link>
+                      </div>
                     ) : (
-                      <button
-                        onClick={handleStartFreshGuestSession}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs text-neutral-600 hover:bg-neutral-50 transition-colors"
-                      >
-                        <span className="text-neutral-400"><IconLogout /></span>
-                        Reset Guest Session
-                      </button>
+                      <div>
+                        <Link
+                          to="/customer/orders"
+                          onClick={() => setDropdownOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-xs sm:text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
+                        >
+                          <span className="text-neutral-400">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+                              <rect x="9" y="3" width="6" height="4" rx="1"/>
+                              <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
+                            </svg>
+                          </span>
+                          My Orders
+                        </Link>
+                      </div>
                     )}
+
+                    <div>
+                      {isUserLoggedIn ? (
+                        <button
+                          onClick={handleLogout}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs sm:text-sm text-red-600 hover:bg-red-50 transition-colors"
+                        >
+                          <span className="text-red-500"><IconLogout /></span>
+                          Logout
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleGuestSignOut}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs sm:text-sm text-red-600 hover:bg-red-50 transition-colors"
+                        >
+                          <span className="text-red-500"><IconLogout /></span>
+                          Sign Out
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            ) : (
+              <div className="hidden sm:flex items-center gap-2">
+                <Link
+                  to="/login"
+                  className="px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-semibold text-neutral-700 hover:text-neutral-900 hover:bg-neutral-100 transition-all"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  to="/register"
+                  className="px-4 py-1.5 rounded-full text-xs sm:text-sm font-bold text-white bg-[#ea580c] hover:bg-[#d94e08] shadow-sm hover:shadow transition-all"
+                >
+                  Register
+                </Link>
+              </div>
+            )}
 
             {/* Mobile Hamburger */}
             <button
@@ -363,23 +400,80 @@ export default function Navbar({ activeOrdersCount = 0 }) {
             )}
           </Link>
 
-          <div className="pt-3 border-t border-neutral-100 space-y-1 mt-2">
-            <Link
-              to="/customer/profile"
-              onClick={() => setMobileOpen(false)}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors"
-            >
-              <span className="text-neutral-400"><IconProfile /></span>
-              <span>My Profile</span>
-            </Link>
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
-            >
-              <IconLogout />
-              <span>Logout</span>
-            </button>
-          </div>
+          {isUserLoggedIn ? (
+            <div className="pt-3 border-t border-neutral-100 space-y-1 mt-2">
+              <Link
+                to="/customer/profile"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors"
+              >
+                <span className="text-neutral-400"><IconProfile /></span>
+                <span>My Profile</span>
+              </Link>
+              <Link
+                to="/customer/orders"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors"
+              >
+                <span className="text-neutral-400">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+                    <rect x="9" y="3" width="6" height="4" rx="1"/>
+                    <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
+                  </svg>
+                </span>
+                <span>My Orders</span>
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <IconLogout />
+                <span>Logout</span>
+              </button>
+            </div>
+          ) : hasGuestSession ? (
+            <div className="pt-3 border-t border-neutral-100 space-y-1 mt-2">
+              <Link
+                to="/customer/orders"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors"
+              >
+                <span className="text-neutral-400">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+                    <rect x="9" y="3" width="6" height="4" rx="1"/>
+                    <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
+                  </svg>
+                </span>
+                <span>My Orders</span>
+              </Link>
+              <button
+                onClick={handleGuestSignOut}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <IconLogout />
+                <span>Sign Out</span>
+              </button>
+            </div>
+          ) : (
+            <div className="pt-3 border-t border-neutral-100 grid grid-cols-2 gap-2 mt-2">
+              <Link
+                to="/login"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-semibold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 transition-colors text-center"
+              >
+                Sign In
+              </Link>
+              <Link
+                to="/register"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-[#ea580c] hover:bg-[#d94e08] shadow-sm text-center"
+              >
+                Register
+              </Link>
+            </div>
+          )}
         </div>
       )}
     </nav>

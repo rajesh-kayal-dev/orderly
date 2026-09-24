@@ -9,7 +9,13 @@ export default defineConfig({
       name: 'gateway-api-middleware',
       async configureServer(server) {
         const { createGatewayApp } = await import('../gateway/src/app.ts');
+        const { initSocketServer } = await import('../gateway/src/socket.ts');
         const gateway = createGatewayApp();
+
+        if (server.httpServer) {
+          initSocketServer(server.httpServer);
+        }
+
         server.middlewares.use('/api', (req, res, next) => {
           gateway(req, res, next);
         });

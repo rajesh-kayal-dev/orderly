@@ -3,14 +3,13 @@ import axios, { type AxiosInstance } from 'axios';
 // Smart URL resolution: if running inside preview iframe or dev server, prioritize /api proxy
 const getBaseUrl = (): string => {
   if (typeof window !== 'undefined') {
-    // If not running purely on standalone localhost:8000, route through Vite proxy /api
     const isCloudPreview =
       window.location.hostname.includes('.run.app') ||
       window.location.hostname.includes('googleusercontent') ||
       window.location.hostname.includes('webcontainer') ||
       window.location.hostname.includes('ais-');
 
-    if (isCloudPreview || window.location.port === '3000') {
+    if (isCloudPreview || window.location.port === '3000' || window.location.port === '3001') {
       return '/api';
     }
   }
@@ -28,8 +27,12 @@ export const apiClient: AxiosInstance = axios.create({
 // Attach Authorization header if session token or guest token is available
 apiClient.interceptors.request.use(
   (config) => {
-    const userToken = sessionStorage.getItem('token');
-    const guestToken = sessionStorage.getItem('guest_token') || localStorage.getItem('guest_token');
+    const userToken = typeof window !== 'undefined'
+      ? (localStorage.getItem('token') || sessionStorage.getItem('token'))
+      : null;
+    const guestToken = typeof window !== 'undefined'
+      ? (localStorage.getItem('guest_token') || sessionStorage.getItem('guest_token'))
+      : null;
     const effectiveToken = userToken || guestToken;
 
     if (effectiveToken && config.headers) {
@@ -43,12 +46,20 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor for consistent error propagation
+// Response interceptor for consistent error propagation and session invalidation
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      // Unauthorized handler
+    if (error.response?.status === 401 && typeof window !== 'undefined') {
+      const hadToken = Boolean(localStorage.getItem('token') || sessionStorage.getItem('token'));
+      if (hadToken && error.config?.url && !error.config.url.includes('/auth/login')) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('profile');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
+        sessionStorage.removeItem('profile');
+      }
     }
     return Promise.reject(error);
   }

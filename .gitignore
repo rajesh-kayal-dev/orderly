@@ -15,8 +15,10 @@ dist/
 # Prisma generated client
 **/src/generated/prisma/
 
-# Test coverage
+# Test coverage & reports
 coverage/
+test-results/
+playwright-report/
 
 # Logs
 *.log

@@ -282,7 +282,9 @@ export default function DeliveryOrders() {
         setAvailableRequests(availableRes.data.data || []);
       }
       if (activeRes.data.success) {
-        setActiveDelivery(activeRes.data.data?.[0] || null);
+        const d = activeRes.data.data;
+        const activeObj = Array.isArray(d) ? d[0] : (d || activeRes.data.active || null);
+        setActiveDelivery(activeObj || null);
       }
     } catch (error) {
       console.error('Error fetching deliveries:', error);
@@ -292,14 +294,24 @@ export default function DeliveryOrders() {
   };
 
   useEffect(() => {
-    if (profile?.id && token) {
+    if (token) {
+      // Ensure profile is loaded
+      if (!profile?.id) {
+        axios.get('/delivery-partners/my-profile')
+          .then(res => {
+            if (res.data?.success && res.data.data) {
+              dispatch(updateProfile(res.data.data));
+            }
+          })
+          .catch(() => {});
+      }
+
       fetchDeliveries();
 
       socket.connect();
-      if (isOnline) socket.emit('join_deliveries');
+      socket.emit('join_deliveries');
 
       const handleAvailableDelivery = (data) => {
-        if (!isOnline) return;
         const oId = data.id || data.orderId;
         if (rejectedOrderIds.includes(oId)) return;
         setPendingOffer(data);
@@ -307,7 +319,6 @@ export default function DeliveryOrders() {
       };
 
       const handleReadyForPickup = (data) => {
-        if (!isOnline) return;
         const oId = data.id || data.orderId;
         if (rejectedOrderIds.includes(oId)) return;
         setPendingOffer(data);
@@ -343,7 +354,7 @@ export default function DeliveryOrders() {
     } else {
       setLoading(false);
     }
-  }, [profile, token, isOnline, rejectedOrderIds]);
+  }, [profile?.id, token, isOnline, rejectedOrderIds]);
 
   const acceptRequest = async (orderId) => {
     try {
@@ -388,6 +399,9 @@ export default function DeliveryOrders() {
 
   const updateStatus = async (orderId, newStatus) => {
     try {
+      if (activeDelivery && (activeDelivery.id === orderId || activeDelivery.orderId === orderId)) {
+        setActiveDelivery(prev => prev ? { ...prev, status: newStatus } : prev);
+      }
       const { data } = await axios.put(`/orders/${orderId}/status`, { status: newStatus });
       if (data.success) {
         notification.success({ 
@@ -397,6 +411,7 @@ export default function DeliveryOrders() {
         fetchDeliveries();
       }
     } catch (error) {
+      fetchDeliveries();
       notification.error({ 
         title: 'Update Failed', 
         description: 'Error updating delivery status' 
@@ -565,7 +580,7 @@ export default function DeliveryOrders() {
                   <ShoppingOutlined /> Mark as Picked Up ✓
                 </button>
               )}
-              {activeDelivery.status === 'picked_up' && (
+              {(activeDelivery.status === 'picked_up' || activeDelivery.status === 'picking_up') && (
                 <button 
                   onClick={() => updateStatus(activeDelivery.id, 'out_for_delivery')}
                   className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-black px-4 py-2 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5"
@@ -573,7 +588,7 @@ export default function DeliveryOrders() {
                   <CarOutlined /> Start Delivery (Out for Delivery) 🛵
                 </button>
               )}
-              {activeDelivery.status === 'out_for_delivery' && (
+              {(activeDelivery.status === 'out_for_delivery' || activeDelivery.status === 'in_transit') && (
                 <button 
                   onClick={() => updateStatus(activeDelivery.id, 'delivered')}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-4 py-2 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5"

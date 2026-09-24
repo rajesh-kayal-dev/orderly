@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { logout, loginSuccess } from '../../redux/slices/authSlice';
 import { resetCartState } from '../../redux/slices/cartSlice';
@@ -30,6 +30,10 @@ export default function RestaurantLayout() {
   const location = useLocation();
   const { user, profile, token } = useSelector(state => state.auth);
   const activeCount = useSelector(state => state.order.activeCount);
+
+  if (!token || user?.role !== 'restaurant') {
+    return <Navigate to="/login" replace />;
+  }
 
   const [isRestaurantOpen, setIsRestaurantOpen] = useState(Boolean(profile?.is_active ?? profile?.is_open ?? true));
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -93,13 +97,29 @@ export default function RestaurantLayout() {
     if (user?.id) {
       socket.connect();
       socket.emit('join', user.id);
-      if (profile?.id) socket.emit('join', profile.id);
+      socket.emit('join_restaurant', profile?.id || user.id);
+      socket.emit('join', `restaurant_${profile?.id || user.id}`);
+      socket.emit('join', 'role_restaurant');
+
+      // Fetch persistent notifications on mount
+      axios.get('/notifications').then((res) => {
+        if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+          const mapped = res.data.data.map((n) => ({
+            id: n.id,
+            title: n.title || n.message,
+            time: n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently',
+            read: Boolean(n.read),
+            link: '/restaurant/orders'
+          }));
+          setNotificationsList(mapped);
+        }
+      }).catch(() => {});
 
       const handleNewOrder = (data) => {
         const orderNum = data.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'REC';
         const newNotif = {
           id: Date.now(),
-          title: `New Order #${orderNum} received!`,
+          title: `New Order #${orderNum} received!${data.total ? ` (₹${data.total})` : ''}`,
           time: 'Just now',
           read: false,
           link: '/restaurant/orders'

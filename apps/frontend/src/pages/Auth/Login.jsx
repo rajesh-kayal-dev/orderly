@@ -62,12 +62,24 @@ export default function Login() {
   };
 
   const handleRedirect = (role) => {
-    switch (role.toLowerCase()) {
-      case 'customer': navigate('/customer'); break;
-      case 'restaurant': navigate('/restaurant'); break;
-      case 'delivery_partner': navigate('/delivery'); break;
-      case 'admin': navigate('/admin'); break;
-      default: navigate('/customer');
+    const r = (role || '').toLowerCase();
+    switch (r) {
+      case 'customer':
+        navigate('/customer');
+        break;
+      case 'restaurant':
+        navigate('/restaurant');
+        break;
+      case 'delivery_partner':
+      case 'delivery':
+      case 'driver':
+        navigate('/delivery');
+        break;
+      case 'admin':
+        navigate('/admin');
+        break;
+      default:
+        navigate('/customer');
     }
   };
 
@@ -184,7 +196,10 @@ export default function Login() {
             onSubmit={async (values, { setSubmitting }) => {
               try {
                 setError('');
-                const response = await axios.post('/auth/login', values);
+                const response = await axios.post('/auth/login', {
+                  email: values.email?.trim(),
+                  password: values.password
+                });
                 const { data } = response.data;
                 const userObj = data.user || {
                   id: data.id,
@@ -214,6 +229,26 @@ export default function Login() {
                       }
                     }
                   }
+                } else if ((userRole === 'delivery_partner' || userRole === 'delivery') && !profileData) {
+                  try {
+                    const profileRes = await axios.get('/delivery-partners/my-profile', {
+                      headers: { Authorization: `Bearer ${data.token}` }
+                    });
+                    profileData = profileRes.data.data;
+                  } catch (profileErr) {
+                    if (profileErr.response?.status === 404) {
+                      try {
+                        const createRes = await axios.post('/delivery-partners/my-profile', {
+                          vehicle_type: 'Motorcycle',
+                          vehicle_number: 'DL-01-AB-1234',
+                          is_available: true
+                        }, { headers: { Authorization: `Bearer ${data.token}` } });
+                        profileData = createRes.data.data;
+                      } catch (createErr) {
+                        console.error('Failed to auto-create delivery profile:', createErr);
+                      }
+                    }
+                  }
                 }
 
                 dispatch(loginSuccess({
@@ -228,12 +263,12 @@ export default function Login() {
 
                 handleRedirect(userRole);
               } catch (err) {
-                setError(err.response?.data?.message || 'Login failed. Please check your credentials or use the demo buttons below.');
+                setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
                 setSubmitting(false);
               }
             }}
           >
-            {({ isSubmitting, setFieldValue }) => (
+            {({ isSubmitting }) => (
               <Form className="space-y-3 flex-1 flex flex-col justify-center">
                 <div>
                   <div className="auth-input-container">
@@ -286,64 +321,6 @@ export default function Login() {
                     </>
                   )}
                 </button>
-
-                {/* Quick Demo Credentials Fillers */}
-                <div className="bg-orange-50/60 p-2.5 rounded-2xl border border-orange-100/80">
-                  <div className="text-[10px] font-bold text-orange-800/80 uppercase tracking-wider text-center mb-1.5 flex items-center justify-center gap-1">
-                    <span>⚡ Quick Demo Logins</span>
-                    <span className="text-[9px] font-normal text-orange-600">(Password: password123)</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFieldValue('email', 'rajeshkayal8001@gmail.com');
-                        setFieldValue('password', 'password123');
-                        setError('');
-                      }}
-                      className="py-1.5 px-2 bg-white hover:bg-orange-100/50 border border-orange-200/90 text-orange-900 text-[11px] font-semibold rounded-xl text-center transition-all cursor-pointer shadow-xs truncate"
-                      title="Rajesh Kayal (Customer)"
-                    >
-                      👤 Rajesh Kayal
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFieldValue('email', 'customer@ofds.com');
-                        setFieldValue('password', 'password123');
-                        setError('');
-                      }}
-                      className="py-1.5 px-2 bg-white hover:bg-emerald-50 border border-emerald-200/90 text-emerald-900 text-[11px] font-semibold rounded-xl text-center transition-all cursor-pointer shadow-xs truncate"
-                      title="Customer Demo"
-                    >
-                      🛍️ Customer Demo
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFieldValue('email', 'restaurant@ofds.com');
-                        setFieldValue('password', 'password123');
-                        setError('');
-                      }}
-                      className="py-1.5 px-2 bg-white hover:bg-amber-50 border border-amber-200/90 text-amber-900 text-[11px] font-semibold rounded-xl text-center transition-all cursor-pointer shadow-xs truncate"
-                      title="Restaurant Demo"
-                    >
-                      🍳 Restaurant Demo
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFieldValue('email', 'driver@ofds.com');
-                        setFieldValue('password', 'password123');
-                        setError('');
-                      }}
-                      className="py-1.5 px-2 bg-white hover:bg-sky-50 border border-sky-200/90 text-sky-900 text-[11px] font-semibold rounded-xl text-center transition-all cursor-pointer shadow-xs truncate"
-                      title="Driver Demo"
-                    >
-                      🛵 Driver Demo
-                    </button>
-                  </div>
-                </div>
 
                 <div className="relative my-3">
                   <div className="absolute inset-0 flex items-center">

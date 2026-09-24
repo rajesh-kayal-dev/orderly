@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 
-export default function BrandLogo({ variant = 'orange', size = 'md', to = '/customer', className = '' }) {
+export default function BrandLogo({ variant = 'orange', size = 'md', to = '/', className = '' }) {
   const sizeMap = {
     sm: { img: 'h-6 max-h-6', text: 'text-xl', offset: '-ml-1' },
     md: { img: 'h-8 max-h-8', text: 'text-2xl', offset: '-ml-1' },

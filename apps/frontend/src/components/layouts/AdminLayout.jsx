@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { logout } from '../../redux/slices/authSlice';
 import { resetCartState } from '../../redux/slices/cartSlice';
+import axios from '../../api/axios';
 import socket from '../../socket';
 import BrandLogo from '../common/BrandLogo';
 import {
@@ -20,7 +21,8 @@ import {
   CrownOutlined,
   DownOutlined,
   RightOutlined,
-  ClockCircleOutlined
+  ClockCircleOutlined,
+  StarOutlined
 } from '@ant-design/icons';
 
 export default function AdminLayout() {
@@ -30,11 +32,7 @@ export default function AdminLayout() {
   const { user, isAuthenticated } = useSelector(state => state.auth);
 
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notificationsList, setNotificationsList] = useState([
-    { id: 1, title: 'New restaurant "Spice House" requested approval', time: '12 mins ago', read: false },
-    { id: 2, title: 'Delivery partner "Rahul" submitted verification documents', time: '45 mins ago', read: false },
-    { id: 3, title: 'System automated backup completed successfully', time: '2 hours ago', read: true }
-  ]);
+  const [notificationsList, setNotificationsList] = useState([]);
 
   const notificationRef = useRef(null);
 
@@ -54,11 +52,30 @@ export default function AdminLayout() {
     if (user?.id) {
       socket.connect();
       socket.emit('join', user.id);
+      socket.emit('join_admin');
+      socket.emit('join', 'role_admin');
+
+      // Fetch persistent admin notifications on mount
+      axios.get('/notifications').then((res) => {
+        if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+          const mapped = res.data.data.map((n) => ({
+            id: n.id,
+            title: n.title || n.message,
+            link: n.link || (n.type === 'Driver' || n.role === 'delivery_partner' ? '/admin/drivers' : n.type === 'Restaurant' || n.role === 'restaurant' ? '/admin/restaurants' : n.type === 'Customer' || n.role === 'customer' ? '/admin/users' : '/admin'),
+            type: n.type,
+            time: n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently',
+            read: Boolean(n.read),
+          }));
+          setNotificationsList(mapped);
+        }
+      }).catch(() => {});
 
       const handleNewOrder = (data) => {
         const notif = {
           id: Date.now(),
           title: `New Platform Order #${data.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'ORD'} received!`,
+          link: '/admin/orders',
+          type: 'Order',
           time: 'Just now',
           read: false
         };
@@ -66,28 +83,88 @@ export default function AdminLayout() {
       };
 
       const handleNewPartner = (data) => {
+        const isDriver = data.type === 'Driver' || data.role === 'delivery_partner';
         const notif = {
           id: Date.now(),
-          title: `New ${data.type || 'Partner'} registration request pending approval`,
+          title: isDriver 
+            ? `Delivery partner "${data.name || ''}" submitted verification documents`
+            : `New Restaurant "${data.name || ''}" registered`,
+          link: data.link || (isDriver ? '/admin/drivers' : '/admin/restaurants'),
+          type: data.type || (isDriver ? 'Driver' : 'Restaurant'),
           time: 'Just now',
           read: false
         };
         setNotificationsList(prev => [notif, ...prev]);
       };
 
+      const handleNewUser = (data) => {
+        const notif = {
+          id: Date.now(),
+          title: `New Customer "${data.full_name || data.fullName || data.name || 'User'}" joined Orderly`,
+          link: '/admin/users',
+          type: 'Customer',
+          time: 'Just now',
+          read: false
+        };
+        setNotificationsList(prev => [notif, ...prev]);
+      };
+
+      const handleNewNotification = (notif) => {
+        const t = (notif.title || notif.message || '').toLowerCase();
+        let targetLink = notif.link;
+        if (!targetLink) {
+          if (t.includes('delivery') || t.includes('driver') || notif.type === 'Driver') targetLink = '/admin/drivers';
+          else if (t.includes('restaurant') || notif.type === 'Restaurant') targetLink = '/admin/restaurants';
+          else if (t.includes('customer') || t.includes('user') || notif.type === 'Customer') targetLink = '/admin/users';
+          else if (t.includes('order') || notif.type === 'Order') targetLink = '/admin/orders';
+          else if (t.includes('feedback')) targetLink = '/admin/feedback';
+          else targetLink = '/admin';
+        }
+
+        setNotificationsList(prev => [{
+          id: notif.id || Date.now(),
+          title: notif.title || notif.message,
+          link: targetLink,
+          type: notif.type,
+          time: 'Just now',
+          read: false
+        }, ...prev]);
+      };
+
+      const handleNewFeedback = (fb) => {
+        setNotificationsList(prev => [{
+          id: Date.now(),
+          title: `New Feedback received: "${fb.sentiment}" from ${fb.customer_name || 'Customer'}`,
+          link: '/admin/feedback',
+          type: 'Feedback',
+          time: 'Just now',
+          read: false
+        }, ...prev]);
+      };
+
       socket.on('NEW_ORDER', handleNewOrder);
       socket.on('PARTNER_REGISTERED', handleNewPartner);
+      socket.on('NEW_RESTAURANT_REGISTERED', handleNewPartner);
+      socket.on('NEW_DELIVERY_PARTNER_REGISTERED', handleNewPartner);
+      socket.on('NEW_USER_REGISTERED', handleNewUser);
+      socket.on('NEW_NOTIFICATION', handleNewNotification);
+      socket.on('NEW_FEEDBACK', handleNewFeedback);
 
       return () => {
         socket.off('NEW_ORDER', handleNewOrder);
         socket.off('PARTNER_REGISTERED', handleNewPartner);
+        socket.off('NEW_RESTAURANT_REGISTERED', handleNewPartner);
+        socket.off('NEW_DELIVERY_PARTNER_REGISTERED', handleNewPartner);
+        socket.off('NEW_USER_REGISTERED', handleNewUser);
+        socket.off('NEW_NOTIFICATION', handleNewNotification);
+        socket.off('NEW_FEEDBACK', handleNewFeedback);
       };
     }
   }, [user]);
 
   // Security guard: redirect if not admin
   if (!isAuthenticated || user?.role?.toLowerCase() !== 'admin') {
-    return <Link to="/admin/login" replace />;
+    return <Navigate to="/admin/login" replace />;
   }
 
   const handleLogout = () => {
@@ -98,10 +175,21 @@ export default function AdminLayout() {
 
   const markAllRead = () => {
     setNotificationsList(prev => prev.map(n => ({ ...n, read: true })));
+    axios.post('/notifications/read-all').catch(() => {});
   };
 
   const clearNotifications = () => {
     setNotificationsList([]);
+  };
+
+  const handleNotificationClick = (item) => {
+    setNotificationsList(prev => prev.map(n => n.id === item.id ? { ...n, read: true } : n));
+    if (item.id) {
+      axios.patch(`/notifications/${item.id}/read`).catch(() => {});
+    }
+    setShowNotifications(false);
+    const targetLink = item.link || (item.type === 'Driver' ? '/admin/drivers' : item.type === 'Restaurant' ? '/admin/restaurants' : item.type === 'Customer' ? '/admin/users' : '/admin');
+    navigate(targetLink);
   };
 
   const unreadCount = notificationsList.filter(n => !n.read).length;
@@ -110,13 +198,14 @@ export default function AdminLayout() {
   const navItems = [
     { label: 'Dashboard', path: '/admin', icon: <AppstoreOutlined /> },
     { label: 'Orders', path: '/admin/orders', icon: <ShoppingOutlined /> },
-    { label: 'Users', path: '/admin/users', icon: <TeamOutlined />, hasDropdown: true },
-    { label: 'Restaurants', path: '/admin/pending-approvals', icon: <ShopOutlined />, hasDropdown: true },
-    { label: 'Delivery Partners', path: '/admin/drivers', icon: <CarOutlined />, hasDropdown: true },
-    { label: 'Menu Catalog', path: '/admin/menu', icon: <UnorderedListOutlined />, hasDropdown: true },
-    { label: 'Payouts', path: '/admin/payouts', icon: <WalletOutlined />, hasDropdown: true },
+    { label: 'Users', path: '/admin/users', icon: <TeamOutlined /> },
+    { label: 'Restaurants', path: '/admin/restaurants', icon: <ShopOutlined /> },
+    { label: 'Delivery Partners', path: '/admin/drivers', icon: <CarOutlined /> },
+    { label: 'Feedback', path: '/admin/feedback', icon: <StarOutlined /> },
+    { label: 'Menu Catalog', path: '/admin/menu', icon: <UnorderedListOutlined /> },
+    { label: 'Payouts', path: '/admin/payouts', icon: <WalletOutlined /> },
     { label: 'Analytics', path: '/admin/analytics', icon: <BarChartOutlined /> },
-    { label: 'System Settings', path: '/admin/settings', icon: <SettingOutlined />, hasDropdown: true }
+    { label: 'System Settings', path: '/admin/settings', icon: <SettingOutlined /> }
   ];
 
   return (
@@ -254,13 +343,16 @@ export default function AdminLayout() {
                       notificationsList.map(item => (
                         <div
                           key={item.id}
-                          className={`p-2.5 rounded-xl border transition-colors flex items-start justify-between gap-2 ${
-                            item.read ? 'bg-slate-50/50 border-slate-100 text-slate-500' : 'bg-orange-50/40 border-orange-100/80 text-slate-800 font-semibold'
+                          onClick={() => handleNotificationClick(item)}
+                          className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-start justify-between gap-2 hover:shadow-xs ${
+                            item.read 
+                              ? 'bg-slate-50/50 border-slate-100 text-slate-500 hover:bg-slate-100/70 hover:border-slate-200' 
+                              : 'bg-orange-50/50 border-orange-200/80 text-slate-900 font-semibold hover:bg-orange-100/60 hover:border-orange-300'
                           }`}
                         >
-                          <div className="space-y-0.5">
-                            <p className="text-xs font-bold leading-tight">{item.title}</p>
-                            <p className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                          <div className="space-y-0.5 flex-1 min-w-0">
+                            <p className="text-xs font-bold leading-tight break-words">{item.title}</p>
+                            <p className="text-[10px] text-slate-400 font-medium flex items-center gap-1 mt-0.5">
                               <ClockCircleOutlined className="text-[9px]" /> {item.time}
                             </p>
                           </div>

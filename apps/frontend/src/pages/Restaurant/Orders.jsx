@@ -296,8 +296,8 @@ export default function RestaurantOrders() {
                                     order.DeliveryPartner?.User?.phone_number || 
                                     'No Driver Assigned';
 
-                const numAmount = Number(order.total_amount || order.subtotal || 0);
-                const displayAmount = (numAmount > 0 ? numAmount : 80).toFixed(2);
+                const numAmount = Number(order.total ?? order.total_amount ?? order.subtotal ?? 0);
+                const displayAmount = (numAmount > 0 ? numAmount : 0).toFixed(2);
 
                 return (
                   <tr
