@@ -1967,9 +1967,43 @@ export function createGatewayApp(): express.Express {
   });
 
   // Profile endpoints
-  app.get("/auth/profile", authenticate, (req, res) => {
+  app.get("/auth/profile", authenticate, async (req, res) => {
     const authUser = (req as any).user;
-    const user = users.find((u) => u.id === authUser.id) || authUser;
+    
+    // Check PostgreSQL DB first for latest authoritative user record
+    let dbUser: any = null;
+    try {
+      const resUser = await dbPool.query(
+        `SELECT id, email, role, full_name, "fullName", phone_number, "phoneNumber", status, is_active, created_at FROM "User" WHERE id = $1 OR LOWER(email) = LOWER($2) LIMIT 1;`,
+        [authUser.id, authUser.email || ""]
+      );
+      if (resUser.rows.length > 0) {
+        dbUser = resUser.rows[0];
+      }
+    } catch (e) {
+      console.warn("DB query notice in /auth/profile:", e);
+    }
+
+    let user = users.find((u) => u.id === authUser.id || (authUser.email && u.email.toLowerCase() === authUser.email.toLowerCase()));
+    if (!user) {
+      user = {
+        id: dbUser?.id || authUser.id,
+        email: dbUser?.email || authUser.email,
+        role: dbUser?.role?.toLowerCase() || authUser.role || "customer",
+        full_name: dbUser?.fullName || dbUser?.full_name || authUser.full_name || authUser.fullName || "User",
+        phone_number: dbUser?.phoneNumber || dbUser?.phone_number || authUser.phone_number || authUser.phoneNumber || null,
+        status: dbUser?.status?.toLowerCase() === "active" || dbUser?.is_active ? "active" : "suspended",
+        created_at: dbUser?.created_at || new Date().toISOString(),
+      };
+      users.push(user);
+    } else if (dbUser) {
+      user.full_name = dbUser.fullName || dbUser.full_name || user.full_name;
+      user.phone_number = dbUser.phoneNumber || dbUser.phone_number || user.phone_number;
+    }
+
+    const resolvedFullName = dbUser?.fullName || dbUser?.full_name || user.full_name || authUser.full_name || authUser.fullName || "User";
+    const resolvedPhone = dbUser?.phoneNumber || dbUser?.phone_number || user.phone_number || authUser.phone_number || authUser.phoneNumber || null;
+
     let userRole = (user.role || authUser.role || "customer").toString().toLowerCase();
     if (userRole === "driver" || userRole === "delivery") userRole = "delivery_partner";
     if (userRole === "partner") userRole = "restaurant";
@@ -1979,9 +2013,9 @@ export function createGatewayApp(): express.Express {
       dpProfile = {
         id: `dp-${user.id}`,
         userId: user.id,
-        fullName: user.full_name || "Delivery Partner",
-        name: user.full_name || "Delivery Partner",
-        phone: user.phone_number || "+91 9845678901",
+        fullName: resolvedFullName || "Delivery Partner",
+        name: resolvedFullName || "Delivery Partner",
+        phone: resolvedPhone || "+91 9845678901",
         area: "City Center",
         deliveries: "0",
         vehicle_type: "Motorcycle",
@@ -2000,12 +2034,12 @@ export function createGatewayApp(): express.Express {
         id: `rest-${user.id}`,
         owner_id: user.id,
         user_id: user.id,
-        owner_name: user.full_name || "Restaurant Owner",
+        owner_name: resolvedFullName || "Restaurant Owner",
         owner_email: user.email,
-        name: `${user.full_name || "My"}'s Restaurant`,
+        name: `${resolvedFullName || "My"}'s Restaurant`,
         description: "Fresh handcrafted gourmet meals, specials, and local favorites.",
         address: "100 Food Street, City Center",
-        phone_number: user.phone_number || "+91 9834567890",
+        phone_number: resolvedPhone || "+91 9834567890",
         cuisine: ["Burgers", "Fast Food", "Continental"],
         rating: 5.0,
         image: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=60",
@@ -2027,8 +2061,13 @@ export function createGatewayApp(): express.Express {
       success: true,
       data: {
         ...user,
+        full_name: resolvedFullName,
+        fullName: resolvedFullName,
+        name: resolvedFullName,
+        phone_number: resolvedPhone,
+        phoneNumber: resolvedPhone,
         role: userRole,
-        Customer: userRole === "customer" ? { id: `cust-${user.id}` } : null,
+        Customer: userRole === "customer" ? { id: `cust-${user.id}`, fullName: resolvedFullName, phone: resolvedPhone } : null,
         DeliveryPartner: dpProfile || null,
         Restaurant: restProfile || null,
         Admin: userRole === "admin" ? { id: `admin-${user.id}` } : null,
@@ -2036,21 +2075,109 @@ export function createGatewayApp(): express.Express {
     });
   });
 
+  // Profile update handler
+  const handleProfileUpdate = async (req: express.Request, res: express.Response) => {
+    const authUser = (req as any).user;
+    const { full_name, fullName, name, phone_number, phoneNumber, password, address, restaurant_name, vehicle_license } = req.body;
+
+    const newName = (full_name || fullName || name || "").trim();
+    const newPhone = (phone_number || phoneNumber || "").trim();
+
+    try {
+      // 1. Update PostgreSQL DB
+      let dbUpdatedUser: any = null;
+      try {
+        let updateQuery = `
+          UPDATE "User"
+          SET 
+            "fullName" = COALESCE(NULLIF($1, ''), "fullName"),
+            full_name = COALESCE(NULLIF($1, ''), full_name),
+            "phoneNumber" = COALESCE(NULLIF($2, ''), "phoneNumber"),
+            phone_number = COALESCE(NULLIF($2, ''), phone_number),
+            updated_at = NOW(),
+            "updatedAt" = NOW()
+        `;
+        const queryParams: any[] = [newName, newPhone];
+
+        if (password && password.length >= 6) {
+          const hash = await bcrypt.hash(password, 10);
+          updateQuery += `, "passwordHash" = $3, password_hash = $3 WHERE id = $4 OR LOWER(email) = LOWER($5) RETURNING *;`;
+          queryParams.push(hash, authUser.id, authUser.email || "");
+        } else {
+          updateQuery += ` WHERE id = $3 OR LOWER(email) = LOWER($4) RETURNING *;`;
+          queryParams.push(authUser.id, authUser.email || "");
+        }
+
+        const dbRes = await dbPool.query(updateQuery, queryParams);
+        if (dbRes.rows.length > 0) {
+          dbUpdatedUser = dbRes.rows[0];
+        }
+      } catch (dbErr) {
+        console.warn("Database profile update notice:", dbErr);
+      }
+
+      // 2. Update memory records
+      let user = users.find((u) => u.id === authUser.id || (authUser.email && u.email.toLowerCase() === authUser.email.toLowerCase()));
+      if (user) {
+        if (newName) user.full_name = newName;
+        if (newPhone) user.phone_number = newPhone;
+      }
+
+      const finalName = newName || dbUpdatedUser?.fullName || dbUpdatedUser?.full_name || user?.full_name || authUser.full_name || "User";
+      const finalPhone = newPhone || dbUpdatedUser?.phoneNumber || dbUpdatedUser?.phone_number || user?.phone_number || authUser.phone_number || null;
+
+      // Update attached partner/restaurant records
+      const dp = deliveryPartners.find((d) => d.userId === authUser.id || d.id === authUser.id);
+      if (dp) {
+        dp.fullName = finalName;
+        dp.name = finalName;
+        if (finalPhone) dp.phone = finalPhone;
+        if (vehicle_license) dp.vehicle_number = vehicle_license;
+      }
+
+      const rest = restaurants.find((r) => r.owner_id === authUser.id || r.user_id === authUser.id || r.id === authUser.id);
+      if (rest) {
+        rest.owner_name = finalName;
+        if (restaurant_name) rest.name = restaurant_name;
+        if (address) rest.address = address;
+        if (finalPhone) rest.phone_number = finalPhone;
+      }
+
+      const userRole = (user?.role || authUser.role || "customer").toString().toLowerCase();
+
+      return void res.json({
+        success: true,
+        message: "Profile updated successfully",
+        data: {
+          id: dbUpdatedUser?.id || user?.id || authUser.id,
+          email: dbUpdatedUser?.email || user?.email || authUser.email,
+          role: userRole,
+          full_name: finalName,
+          fullName: finalName,
+          name: finalName,
+          phone_number: finalPhone,
+          phoneNumber: finalPhone,
+          Customer: userRole === "customer" ? { id: `cust-${authUser.id}`, fullName: finalName, phone: finalPhone, address } : null,
+          DeliveryPartner: dp || null,
+          Restaurant: rest || null,
+          Admin: userRole === "admin" ? { id: `admin-${authUser.id}` } : null,
+        },
+      });
+    } catch (err: any) {
+      console.error("Profile update error:", err);
+      return void res.status(500).json({ success: false, message: err?.message || "Failed to update profile" });
+    }
+  };
+
+  app.put("/auth/profile", authenticate, handleProfileUpdate);
+
   app.get("/auth/me", authenticate, (req, res) => {
     const authUser = (req as any).user;
     const user = users.find((u) => u.id === authUser.id) || authUser;
     return void res.json({ success: true, data: user });
   });
 
-  app.put("/auth/me", authenticate, (req, res) => {
-    const authUser = (req as any).user;
-    const user = users.find((u) => u.id === authUser.id);
-    if (!user) return void res.status(404).json({ success: false, message: "User not found" });
-
-    if (req.body.full_name) user.full_name = req.body.full_name;
-    if (req.body.phone_number) user.phone_number = req.body.phone_number;
-    return void res.json({ success: true, data: user });
-  });
+  app.put("/auth/me", authenticate, handleProfileUpdate);
 
   // ==========================================
   // RESTAURANTS & MENU ENDPOINTS
