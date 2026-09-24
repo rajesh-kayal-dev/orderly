@@ -289,11 +289,11 @@ export default function CheckoutPage() {
           onOk: () => { dispatch(fetchCart()); handlePlaceOrder(); }
         });
       } else {
-        const errorMsg = error.message || error.response?.data?.message || 'Payment could not be completed.';
+        const errorMsg = error.response?.data?.message || error.message || 'Payment could not be completed.';
         setPaymentError(errorMsg);
         notification.error({
           message: 'Payment Unsuccessful',
-          description: `${errorMsg} You can select another payment method like Cash on Delivery below.`,
+          description: `${errorMsg}. You can select another payment method like Cash on Delivery below.`,
           placement: 'topRight'
         });
       }
