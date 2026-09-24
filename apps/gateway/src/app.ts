@@ -623,21 +623,26 @@ const deliveryPartners: any[] = [
     userId: "usr-driver-1",
     fullName: "Vikram Singh",
     name: "Vikram Singh",
+    email: "vikram.singh@ofds.com",
     phone: "+91 9845678901",
     area: "Vijay Nagar, Indore",
-    deliveries: "840+",
+    deliveries: "0",
     vehicle_type: "Motorcycle",
     vehicle_number: "MP-09-AB-1234",
-    is_available: true,
+    is_available: false,
     rating: 4.9,
-    image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60",
+    status: "PENDING_APPROVAL",
+    is_active: false,
+    image: "",
     current_location: { lat: 22.7196, lng: 75.8577 },
+    created_at: new Date(Date.now() - 3600000 * 48).toISOString(),
   },
   {
     id: "dp-2",
     userId: "9c4a3e8e-2a40-43b1-8fe6-d2342511cb58",
     fullName: "Alex Express",
     name: "Alex Express",
+    email: "driver@ofds.com",
     phone: "9830111111",
     area: "Park Street, Kolkata",
     deliveries: "620+",
@@ -645,8 +650,11 @@ const deliveryPartners: any[] = [
     vehicle_number: "WB-01-EF-4321",
     is_available: true,
     rating: 4.8,
-    image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=60",
+    status: "ACTIVE",
+    is_active: true,
+    image: "",
     current_location: { lat: 22.5726, lng: 88.3639 },
+    created_at: new Date(Date.now() - 3600000 * 72).toISOString(),
   },
 ];
 
@@ -2786,111 +2794,102 @@ export function createGatewayApp(): express.Express {
     // 1. Sync latest driver statuses from PostgreSQL DB
     try {
       const resDrivers = await dbPool.query(
-        `SELECT id, email, role, full_name, "fullName", phone_number, "phoneNumber", status, is_active, is_blocked, created_at FROM "User" WHERE LOWER(role) IN ('delivery_partner', 'driver') ORDER BY created_at DESC;`
+        `SELECT id, email, role, full_name, "fullName", phone_number, "phoneNumber", status, is_active, is_blocked, created_at FROM "User" WHERE LOWER(role) IN ('delivery_partner', 'driver', 'delivery') ORDER BY created_at DESC;`
       );
       for (const row of resDrivers.rows) {
-        const existing = users.find((u) => u.id === row.id || (row.email && u.email.toLowerCase() === row.email.toLowerCase()));
+        const nameVal = row.fullName || row.full_name || "Delivery Partner";
+        const phoneVal = row.phoneNumber || row.phone_number || null;
         const isApproved = (row.status === "ACTIVE" || row.status === "active" || row.status === "VERIFIED") && row.is_active === true && !row.is_blocked;
         const statusVal = isApproved ? "active" : (row.status || "PENDING_APPROVAL");
+
+        const existing = users.find((u) => u.id === row.id || (row.email && u.email && u.email.toLowerCase() === row.email.toLowerCase()));
         if (existing) {
+          existing.full_name = nameVal;
           existing.status = statusVal as any;
           existing.is_active = isApproved;
           (existing as any).is_blocked = Boolean(row.is_blocked);
+        } else {
+          users.push({
+            id: row.id,
+            email: row.email || "",
+            role: "delivery_partner" as any,
+            full_name: nameVal,
+            phone_number: phoneVal,
+            status: statusVal.toLowerCase() as any,
+            created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+          });
         }
-        const dp = deliveryPartners.find((d) => d.userId === row.id || d.id === `dp-${row.id}`);
+
+        const dp = deliveryPartners.find((d) => d.userId === row.id || d.id === `dp-${row.id}` || d.id === row.id || (row.email && d.email && d.email.toLowerCase() === row.email.toLowerCase()));
         if (dp) {
+          dp.name = nameVal;
+          dp.fullName = nameVal;
           dp.status = isApproved ? "ACTIVE" : (row.status || "PENDING_APPROVAL");
           dp.is_active = isApproved;
           if (!isApproved) {
             dp.is_available = false;
           }
+        } else if (isApproved) {
+          deliveryPartners.push({
+            id: `dp-${row.id}`,
+            userId: row.id,
+            name: nameVal,
+            fullName: nameVal,
+            email: row.email,
+            phone: phoneVal || "+91 9845600000",
+            area: "City Center",
+            deliveries: "0",
+            vehicle_type: "Motorcycle",
+            vehicle_number: "DL-01-AB-1234",
+            is_available: true,
+            rating: 5.0,
+            status: "ACTIVE",
+            is_active: true,
+            created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+          });
         }
       }
     } catch (e: any) {
       console.warn("[Approved Partners DB sync notice]:", e.message);
     }
 
-    // 2. Only collect strictly approved driver accounts
-    const approvedDrivers = users.filter((u) =>
-      (u.role === "delivery_partner" || (u.role as any) === "driver") &&
-      (u.status === "active" || (u as any).status === "ACTIVE" || (u as any).status === "VERIFIED" || (u as any).status === "verified") &&
-      (u as any).is_active === true &&
-      !(u as any).is_blocked &&
-      u.status !== "PENDING_APPROVAL" &&
-      u.status !== "pending"
-    );
-
     const partnerMap = new Map<string, any>();
 
-    // 3. Add baseline seeded partners ONLY if approved
+    // 2. Add approved partners from deliveryPartners array ONLY
     for (const p of deliveryPartners) {
-      if (p.status === "PENDING_APPROVAL" || p.status === "pending" || p.is_active === false) {
+      const u = users.find((user) => user.id === p.userId || user.id === p.id || (p.email && user.email && user.email.toLowerCase() === p.email.toLowerCase()));
+      const rawStatus = ((p.status || u?.status || "") as string).toUpperCase();
+      const isApproved = (rawStatus === "ACTIVE" || rawStatus === "VERIFIED") && p.is_active !== false && !p.is_blocked && (!u || (!u.is_blocked && (u as any).is_active !== false && u.status !== "PENDING_APPROVAL" && u.status !== "pending"));
+
+      if (!isApproved) {
         continue;
       }
+
       const isOnline = p.is_available ?? false;
       partnerMap.set(p.userId || p.id, {
         id: p.id,
         userId: p.userId || p.id,
         name: p.fullName || p.name,
         fullName: p.fullName || p.name,
-        phone: p.phone || "+91 98456 12345",
-        area: p.area || "Salt Lake, Kolkata",
+        phone: p.phone || u?.phone_number || "+91 98456 12345",
+        area: p.area || "Kolkata Central",
         city: "Kolkata",
         rating: p.rating || 4.9,
         reviewsCount: 120,
-        deliveries: p.deliveries || "650+",
+        deliveries: p.deliveries || "150+",
         vehicle: p.vehicle_type ? `${p.vehicle_type} (${p.vehicle_number || "WB-02-AK-9821"})` : "Honda Activa (WB-02-AK-9821)",
         vehicle_type: p.vehicle_type || "Motorcycle",
         vehicle_number: p.vehicle_number || "WB-02-AK-9821",
         is_available: isOnline,
         is_online: isOnline,
         status: isOnline ? "Online" : "Offline",
-        avatar: p.image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60",
-        image: p.image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60",
+        avatar: "",
+        image: "",
         joinDate: "2024",
         latitude: p.current_location?.lat || 22.5726,
         longitude: p.current_location?.lng || 88.3639,
       });
     }
-
-    // 4. Merge in strictly approved delivery partner accounts
-    const avatars = [
-      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60",
-      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=60",
-      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=500&auto=format&fit=crop&q=60",
-      "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=500&auto=format&fit=crop&q=60",
-      "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=500&auto=format&fit=crop&q=60",
-    ];
-
-    approvedDrivers.forEach((u, i) => {
-      const existing = partnerMap.get(u.id);
-      const isOnline = existing ? (existing.is_available ?? false) : false;
-      const avatarUrl = existing?.avatar || avatars[i % avatars.length];
-
-      partnerMap.set(u.id, {
-        id: existing?.id || `dp-${u.id}`,
-        userId: u.id,
-        name: u.full_name,
-        fullName: u.full_name,
-        phone: u.phone_number || existing?.phone || "+91 98312 00000",
-        area: existing?.area || "Indore Central",
-        city: "Kolkata",
-        rating: existing?.rating || Number((4.7 + ((i % 3) * 0.1)).toFixed(1)),
-        reviewsCount: 85 + (i * 15),
-        deliveries: existing?.deliveries || `${120 + (i * 30)}+`,
-        vehicle: existing?.vehicle || "Honda Activa (MH 12 AB 5999)",
-        vehicle_type: existing?.vehicle_type || "Motorcycle",
-        vehicle_number: existing?.vehicle_number || "MH 12 AB 5999",
-        is_available: isOnline,
-        is_online: isOnline,
-        status: isOnline ? "Online" : "Offline",
-        avatar: avatarUrl,
-        image: avatarUrl,
-        joinDate: "2025",
-        latitude: existing?.latitude || 22.5726,
-        longitude: existing?.longitude || 88.3639,
-      });
-    });
 
     const result = Array.from(partnerMap.values());
     return void res.json({ success: true, data: result, total: result.length });
@@ -4766,21 +4765,22 @@ export function createGatewayApp(): express.Express {
 
     try {
       const resDrivers = await dbPool.query(
-        `SELECT id, email, role, full_name, "fullName", phone_number, "phoneNumber", status, is_active, is_blocked, deleted_at, created_at, "createdAt"
+        `SELECT id, email, role, full_name, "fullName", phone_number, "phoneNumber", status, is_active, is_blocked, created_at
          FROM "User"
          WHERE LOWER(role) IN ('delivery_partner', 'driver', 'delivery')
          ORDER BY created_at DESC;`
       );
       for (const row of resDrivers.rows) {
-        const existingUser = users.find((u) => u.id === row.id || (row.email && u.email.toLowerCase() === row.email.toLowerCase()));
+        const existingUser = users.find((u) => u.id === row.id || (row.email && u.email && u.email.toLowerCase() === row.email.toLowerCase()));
         const nameVal = row.fullName || row.full_name || "Delivery Partner";
         const phoneVal = row.phoneNumber || row.phone_number || null;
         const statusVal = row.status || (row.is_active ? "ACTIVE" : "PENDING_APPROVAL");
+        const isApproved = (statusVal === "ACTIVE" || statusVal === "active" || statusVal === "VERIFIED") && row.is_active === true && !row.is_blocked;
         
         if (existingUser) {
           existingUser.full_name = nameVal;
           existingUser.phone_number = phoneVal;
-          existingUser.status = statusVal.toLowerCase() as any;
+          existingUser.status = (isApproved ? "active" : statusVal.toLowerCase()) as any;
           (existingUser as any).is_active = Boolean(row.is_active);
           (existingUser as any).is_blocked = Boolean(row.is_blocked);
           if (row.email) existingUser.email = row.email;
@@ -4791,12 +4791,12 @@ export function createGatewayApp(): express.Express {
             role: "delivery_partner" as any,
             full_name: nameVal,
             phone_number: phoneVal,
-            status: statusVal.toLowerCase() as any,
+            status: (isApproved ? "active" : statusVal.toLowerCase()) as any,
             created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
           });
         }
 
-        const existDp = deliveryPartners.find((dp) => dp.userId === row.id || dp.id === `dp-${row.id}` || dp.id === row.id);
+        const existDp = deliveryPartners.find((dp) => dp.userId === row.id || dp.id === `dp-${row.id}` || dp.id === row.id || (row.email && dp.email && dp.email.toLowerCase() === row.email.toLowerCase()));
         if (!existDp) {
           deliveryPartners.push({
             id: `dp-${row.id}`,
@@ -4809,11 +4809,25 @@ export function createGatewayApp(): express.Express {
             deliveries: "0",
             vehicle_type: "Motorcycle",
             vehicle_number: "DL-01-AB-1234",
-            is_available: Boolean(row.is_active),
+            is_available: isApproved,
             rating: 5.0,
-            status: (row.status || (row.is_active ? "ACTIVE" : "PENDING_APPROVAL")) as any,
+            status: statusVal,
+            is_active: isApproved,
             created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
           });
+        } else {
+          existDp.name = nameVal;
+          existDp.fullName = nameVal;
+          if (row.email) existDp.email = row.email;
+          if (phoneVal) existDp.phone = phoneVal;
+          existDp.status = statusVal;
+          existDp.is_active = isApproved;
+          if (!isApproved) {
+            existDp.is_available = false;
+          }
+          if (row.created_at) {
+            existDp.created_at = new Date(row.created_at).toISOString();
+          }
         }
       }
     } catch (dbErr: any) {
@@ -4830,7 +4844,7 @@ export function createGatewayApp(): express.Express {
         computedStatus = "DELETED";
       } else if ((dp as any).status === "BLOCKED" || u?.status === "blocked" || (u as any)?.is_blocked || rawStatus === "BLOCKED") {
         computedStatus = "BLOCKED";
-      } else if (rawStatus === "PENDING" || rawStatus === "PENDING_APPROVAL" || (u && u.is_active === false && rawStatus !== "SUSPENDED" && rawStatus !== "BLOCKED")) {
+      } else if (rawStatus === "PENDING" || rawStatus === "PENDING_APPROVAL" || rawStatus === "PENDING REVIEW" || (u && u.is_active === false && rawStatus !== "SUSPENDED" && rawStatus !== "BLOCKED")) {
         computedStatus = "PENDING_APPROVAL";
       } else if (rawStatus === "SUSPENDED" || u?.status === "suspended") {
         computedStatus = "SUSPENDED";
@@ -5025,13 +5039,13 @@ export function createGatewayApp(): express.Express {
     try {
       if (u) {
         await dbPool.query(
-          `UPDATE "User" SET status = 'DELETED', is_active = false, deleted_at = NOW() WHERE id = $1;`,
+          `UPDATE "User" SET status = 'DELETED', is_active = false WHERE id = $1;`,
           [u.id]
         );
       }
       if (dp) {
         await dbPool.query(
-          `UPDATE "DeliveryPartner" SET status = 'DELETED', is_available = false, deleted_at = NOW() WHERE id = $1 OR user_id = $2;`,
+          `UPDATE "DeliveryPartner" SET status = 'DELETED', is_available = false WHERE id = $1 OR user_id = $2;`,
           [dp.id, dp.userId || ""]
         );
       }

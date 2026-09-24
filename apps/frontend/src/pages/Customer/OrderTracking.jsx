@@ -929,8 +929,8 @@ export default function OrderTracking() {
                 {/* Floating Driver / Restaurant Info Overlay */}
                 {currentLevel >= 4 ? (
                   <div className="absolute top-4 right-4 z-20 bg-white/95 backdrop-blur-md border border-neutral-200/80 rounded-2xl p-3.5 shadow-lg flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-full bg-neutral-100 overflow-hidden border border-neutral-200 flex-shrink-0">
-                      <img src={currentOrder.driver?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100"} alt={currentOrder.driver?.name} className="w-full h-full object-cover" />
+                    <div className="w-11 h-11 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 text-white font-black text-sm flex items-center justify-center border border-orange-200 flex-shrink-0 shadow-xs tracking-wider select-none">
+                      {((currentOrder.driver?.name || 'DP').trim().split(/\s+/).map(n => n[0]).join('').slice(0, 2)).toUpperCase()}
                     </div>
                     <div>
                       <h4 className="font-extrabold text-neutral-900 text-xs">{currentOrder.driver?.name}</h4>
