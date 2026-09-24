@@ -2720,10 +2720,17 @@ export function createGatewayApp(): express.Express {
   });
 
   app.get("/menu/full/:restaurantId", (req, res) => {
-    const restId = req.params.restaurantId;
-    let matchedItems = menuItems.filter((i) => i.restaurant_id === restId);
+    const restId = String(req.params.restaurantId || "");
+    const cleanRestId = restId.replace(/^rest-/, "");
+    
+    let matchedItems = menuItems.filter(
+      (i) =>
+        i.restaurant_id === restId ||
+        i.restaurant_id === cleanRestId ||
+        i.restaurant_id === `rest-${cleanRestId}`
+    );
     if (matchedItems.length === 0) {
-      matchedItems = menuItems.filter((i) => i.restaurant_id === "1");
+      matchedItems = menuItems.filter((i) => i.restaurant_id === "1" || !i.restaurant_id);
     }
     if (matchedItems.length === 0) {
       matchedItems = menuItems;
@@ -2735,8 +2742,12 @@ export function createGatewayApp(): express.Express {
       if (!categoryMap[cat]) {
         categoryMap[cat] = [];
       }
+      const isAvail = Boolean(item.is_available ?? true);
       categoryMap[cat].push({
         ...item,
+        is_available: isAvail,
+        is_in_stock: isAvail,
+        status: isAvail ? "AVAILABLE" : "OUT_OF_STOCK",
         image_url: item.image,
         imageUrl: item.image,
       });
@@ -2791,7 +2802,14 @@ export function createGatewayApp(): express.Express {
     const targetRest = restaurant_id || restaurantId;
     let items = menuItems;
     if (targetRest) {
-      items = items.filter((i) => i.restaurant_id === String(targetRest) || i.restaurant_id === "1");
+      const cleanTarget = String(targetRest).replace(/^rest-/, "");
+      items = items.filter(
+        (i) =>
+          i.restaurant_id === String(targetRest) ||
+          i.restaurant_id === cleanTarget ||
+          i.restaurant_id === `rest-${cleanTarget}` ||
+          i.restaurant_id === "1"
+      );
     }
     if (search) {
       const q = search.toLowerCase();
@@ -2805,8 +2823,12 @@ export function createGatewayApp(): express.Express {
 
     const formattedItems = items.map((item) => {
       const matchedCat = categories.find((c) => c.name.toLowerCase() === item.category.toLowerCase());
+      const isAvail = Boolean(item.is_available ?? true);
       return {
         ...item,
+        is_available: isAvail,
+        is_in_stock: isAvail,
+        status: isAvail ? "AVAILABLE" : "OUT_OF_STOCK",
         category: { id: matchedCat ? matchedCat.id : item.category, name: item.category },
         category_id: matchedCat ? matchedCat.id : item.category,
         image_url: item.image,
@@ -2824,14 +2846,18 @@ export function createGatewayApp(): express.Express {
   });
 
   app.post("/menu", authenticate, enforceLiveRestaurantActive, (req, res) => {
+    const authUser = (req as any).user;
     const { name, description, price, category_id, category, is_veg, image, image_url, imageUrl, restaurant_id, restaurantId } = req.body;
     if (!name || price === undefined) {
       return void res.status(400).json({ success: false, message: "Name and price are required" });
     }
     const matchedCat = categories.find((c) => c.id === category_id) || { name: category || "General" };
+    const userRest = restaurants.find((r) => r.owner_id === authUser?.id || r.user_id === authUser?.id || r.id === authUser?.id);
+    const resolvedRestId = String(restaurant_id || restaurantId || userRest?.id || `rest-${authUser?.id}` || "1");
+
     const newItem: MenuItemRecord = {
       id: `item-${Date.now()}`,
-      restaurant_id: String(restaurant_id || restaurantId || "1"),
+      restaurant_id: resolvedRestId,
       name: String(name).trim(),
       description: description ? String(description).trim() : "",
       price: Number(price) || 0,
@@ -2852,7 +2878,8 @@ export function createGatewayApp(): express.Express {
   });
 
   app.put("/menu/:id", authenticate, enforceLiveRestaurantActive, (req, res) => {
-    const existing = menuItems.find((i) => i.id === req.params.id);
+    const rawId = req.params.id;
+    const existing = menuItems.find((i) => i.id === rawId || String(i.id) === String(rawId));
     if (!existing) {
       return void res.status(404).json({ success: false, message: "Menu item not found" });
     }
@@ -2864,22 +2891,28 @@ export function createGatewayApp(): express.Express {
     existing.price = price !== undefined ? Number(price) : existing.price;
     existing.category = matchedCat ? matchedCat.name : (category || existing.category);
     existing.image = image || existing.image;
-    existing.is_available = is_available !== undefined ? Boolean(is_available) : existing.is_available;
+    if (is_available !== undefined) {
+      existing.is_available = Boolean(is_available);
+    }
     existing.is_veg = is_veg !== undefined ? Boolean(is_veg) : existing.is_veg;
 
+    const isAvail = Boolean(existing.is_available ?? true);
     const io = getSocketIO();
     if (io) {
-      io.emit("MENU_ITEM_UPDATED", {
+      const payload = {
         itemId: existing.id,
         id: existing.id,
         restaurantId: existing.restaurant_id,
-        is_available: existing.is_available,
-        is_in_stock: existing.is_available,
+        is_available: isAvail,
+        is_in_stock: isAvail,
+        status: isAvail ? "AVAILABLE" : "OUT_OF_STOCK",
         name: existing.name,
         price: existing.price,
         image_url: existing.image,
         description: existing.description,
-      });
+      };
+      io.emit("MENU_ITEM_UPDATED", payload);
+      io.emit("ITEM_AVAILABILITY_CHANGED", payload);
     }
 
     return void res.json({
@@ -2893,32 +2926,38 @@ export function createGatewayApp(): express.Express {
   });
 
   app.patch("/menu/:id/toggle-availability", authenticate, enforceLiveRestaurantActive, (req, res) => {
-    const existing = menuItems.find((i) => i.id === req.params.id);
+    const rawId = req.params.id;
+    const existing = menuItems.find((i) => i.id === rawId || String(i.id) === String(rawId));
     if (!existing) {
       return void res.status(404).json({ success: false, message: "Menu item not found" });
     }
     existing.is_available = !existing.is_available;
+    const isAvail = Boolean(existing.is_available ?? true);
 
     const io = getSocketIO();
     if (io) {
-      io.emit("MENU_ITEM_UPDATED", {
+      const payload = {
         itemId: existing.id,
         id: existing.id,
         restaurantId: existing.restaurant_id,
-        is_available: existing.is_available,
-        is_in_stock: existing.is_available,
+        is_available: isAvail,
+        is_in_stock: isAvail,
+        status: isAvail ? "AVAILABLE" : "OUT_OF_STOCK",
         name: existing.name,
         price: existing.price,
         image_url: existing.image,
         description: existing.description,
-      });
+      };
+      io.emit("MENU_ITEM_UPDATED", payload);
+      io.emit("ITEM_AVAILABILITY_CHANGED", payload);
     }
 
-    return void res.json({ success: true, data: existing });
+    return void res.json({ success: true, data: existing, is_available: existing.is_available });
   });
 
   app.delete("/menu/:id", authenticate, enforceLiveRestaurantActive, (req, res) => {
-    const idx = menuItems.findIndex((i) => i.id === req.params.id);
+    const rawId = req.params.id;
+    const idx = menuItems.findIndex((i) => i.id === rawId || String(i.id) === String(rawId));
     if (idx !== -1) {
       menuItems.splice(idx, 1);
     }

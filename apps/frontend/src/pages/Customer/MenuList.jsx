@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import axios from '../../api/axios';
+import socket from '../../socket';
 import { addToCartAsync } from '../../redux/slices/cartSlice';
 import { message } from 'antd';
 import { 
@@ -70,6 +71,25 @@ export default function MenuList() {
     };
 
     fetchMenuItems();
+
+    const handleMenuItemUpdate = (data) => {
+      if (!data) return;
+      const targetId = data.itemId || data.id;
+      const isAvail = data.is_available ?? data.is_in_stock ?? (data.status !== 'OUT_OF_STOCK');
+      setMenuItems(prev => prev.map(item => 
+        String(item.id) === String(targetId) || (data.name && String(item.name).toLowerCase() === String(data.name).toLowerCase())
+          ? { ...item, ...data, is_available: isAvail, is_in_stock: isAvail, in_stock: isAvail, status: isAvail ? 'AVAILABLE' : 'OUT_OF_STOCK' }
+          : item
+      ));
+    };
+
+    socket.on('MENU_ITEM_UPDATED', handleMenuItemUpdate);
+    socket.on('ITEM_AVAILABILITY_CHANGED', handleMenuItemUpdate);
+
+    return () => {
+      socket.off('MENU_ITEM_UPDATED', handleMenuItemUpdate);
+      socket.off('ITEM_AVAILABILITY_CHANGED', handleMenuItemUpdate);
+    };
   }, []);
 
   const handleAddToCart = async (item) => {

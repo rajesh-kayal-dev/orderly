@@ -91,17 +91,22 @@ export default function RestaurantMenu() {
     };
     fetchMenuData();
 
-    socket.on('MENU_ITEM_UPDATED', (data) => {
+    const handleItemUpdate = (data) => {
       if (!data) return;
+      const targetId = data.itemId || data.id;
+      const isAvail = data.is_available !== undefined ? data.is_available : (data.is_in_stock !== undefined ? data.is_in_stock : data.status !== 'OUT_OF_STOCK');
       setMenu(prevMenu => prevMenu.map(category => ({
         ...category,
         items: (category.items || category.menuItems || [])?.map(item => 
-          String(item.id) === String(data.itemId || data.id) || String(item.name).toLowerCase() === String(data.name).toLowerCase()
-            ? { ...item, ...data, is_available: data.is_available, is_in_stock: data.is_available } 
+          String(item.id) === String(targetId) || (data.name && String(item.name).toLowerCase() === String(data.name).toLowerCase())
+            ? { ...item, ...data, is_available: isAvail, is_in_stock: isAvail, in_stock: isAvail, status: isAvail ? 'AVAILABLE' : 'OUT_OF_STOCK' } 
             : item
         )
       })));
-    });
+    };
+
+    socket.on('MENU_ITEM_UPDATED', handleItemUpdate);
+    socket.on('ITEM_AVAILABILITY_CHANGED', handleItemUpdate);
 
     socket.on('RESTAURANT_STATUS_UPDATED', (data) => {
       if (String(data.restaurantId) !== String(restaurantId)) return;
@@ -122,7 +127,8 @@ export default function RestaurantMenu() {
     });
 
     return () => {
-      socket.off('MENU_ITEM_UPDATED');
+      socket.off('MENU_ITEM_UPDATED', handleItemUpdate);
+      socket.off('ITEM_AVAILABILITY_CHANGED', handleItemUpdate);
       socket.off('RESTAURANT_STATUS_UPDATED');
     };
   }, [restaurantId]);
