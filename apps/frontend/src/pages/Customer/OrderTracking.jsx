@@ -7,7 +7,8 @@ import { addToCartAsync } from '../../redux/slices/cartSlice';
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
-import { message } from 'antd';
+import { message, Modal, Input, Button, Rate } from 'antd';
+const { TextArea } = Input;
 import {
   CopyOutlined,
   PhoneOutlined,
@@ -19,6 +20,7 @@ import {
   CarOutlined,
   HomeOutlined,
   StarFilled,
+  StarOutlined,
   CheckCircleFilled,
   CheckCircleOutlined,
   CompassOutlined,
@@ -28,7 +30,13 @@ import {
   CloseCircleOutlined,
   FireOutlined,
   CheckOutlined,
-  UnorderedListOutlined
+  UnorderedListOutlined,
+  SmileOutlined,
+  MehOutlined,
+  FrownOutlined,
+  HeartFilled,
+  EditOutlined,
+  LikeOutlined
 } from '@ant-design/icons';
 
 // Custom Leaflet Icons for Map
@@ -179,6 +187,87 @@ export default function OrderTracking() {
   // Live Driver Real-time Movement & GPS state
   const [trackProgress, setTrackProgress] = useState(0.0);
   const [socketDriverPos, setSocketDriverPos] = useState(null);
+
+  // Customer Feedback & Review Modal State
+  const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
+  const [feedbackSentiment, setFeedbackSentiment] = useState('Happy');
+  const [feedbackStarRating, setFeedbackStarRating] = useState(5);
+  const [feedbackComment, setFeedbackComment] = useState('');
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [existingFeedback, setExistingFeedback] = useState(null);
+  const [reviewedOrders, setReviewedOrders] = useState({});
+  const promptedOrdersRef = React.useRef(new Set());
+
+  const openFeedbackModal = async (orderToReview) => {
+    const targetOrder = orderToReview || currentOrder;
+    if (!targetOrder) return;
+    
+    setFeedbackSentiment('Happy');
+    setFeedbackStarRating(5);
+    setFeedbackComment('');
+    setExistingFeedback(null);
+    setFeedbackModalVisible(true);
+
+    try {
+      const res = await axios.get(`/orders/${targetOrder.id}/feedback`);
+      if (res.data?.success && res.data?.data) {
+        const fb = res.data.data;
+        setExistingFeedback(fb);
+        setFeedbackSentiment(fb.sentiment || 'Happy');
+        const starMap = { Happy: 5, Satisfied: 4, Unsatisfied: 3, Bad: 2 };
+        setFeedbackStarRating(starMap[fb.sentiment] || 5);
+        setFeedbackComment(fb.comment || '');
+        setReviewedOrders(prev => ({ ...prev, [targetOrder.id]: fb }));
+      }
+    } catch (err) {
+      // No prior feedback
+    }
+  };
+
+  const handleSentimentChange = (sentimentKey) => {
+    setFeedbackSentiment(sentimentKey);
+    const starMap = { Happy: 5, Satisfied: 4, Unsatisfied: 3, Bad: 2 };
+    setFeedbackStarRating(starMap[sentimentKey] || 5);
+  };
+
+  const handleStarChange = (stars) => {
+    setFeedbackStarRating(stars);
+    if (stars >= 5) setFeedbackSentiment('Happy');
+    else if (stars === 4) setFeedbackSentiment('Satisfied');
+    else if (stars === 3) setFeedbackSentiment('Unsatisfied');
+    else setFeedbackSentiment('Bad');
+  };
+
+  const handleTagClick = (tagText) => {
+    setFeedbackComment(prev => {
+      if (!prev) return tagText;
+      if (prev.includes(tagText)) return prev;
+      return `${prev}, ${tagText}`;
+    });
+  };
+
+  const handleSubmitFeedback = async () => {
+    const targetOrder = currentOrder;
+    if (!targetOrder) return;
+    try {
+      setSubmittingFeedback(true);
+      const res = await axios.post(`/orders/${targetOrder.id}/feedback`, {
+        sentiment: feedbackSentiment,
+        comment: feedbackComment
+      });
+      if (res.data?.success) {
+        message.success(existingFeedback ? 'Review updated successfully! Thank you.' : 'Review submitted successfully! Thank you for rating your food.');
+        const updatedFb = { sentiment: feedbackSentiment, comment: feedbackComment };
+        setExistingFeedback(updatedFb);
+        setReviewedOrders(prev => ({ ...prev, [targetOrder.id]: updatedFb }));
+        setFeedbackModalVisible(false);
+      }
+    } catch (err) {
+      message.error(err.response?.data?.message || 'Failed to submit review');
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  };
 
   const parseOrderRecord = (foundActive) => {
     if (!foundActive) return null;
@@ -368,6 +457,14 @@ export default function OrderTracking() {
         };
 
         message.info(`Order #${existing.orderNumber} updated: ${formatStatusDisplay(updatedStatus)}`);
+
+        // Automatically pop up review modal when delivery completes in real-time
+        if (updatedStatus === 'delivered' || updatedStatus === 'completed') {
+          setTimeout(() => {
+            openFeedbackModal(nextOrders[idx]);
+          }, 800);
+        }
+
         return nextOrders;
       });
     };
@@ -389,6 +486,37 @@ export default function OrderTracking() {
 
   const currentOrder = activeOrders[selectedOrderIndex] || activeOrders[0] || null;
   const currentLevel = currentOrder ? getStatusLevel(currentOrder.status) : 1;
+
+  // Auto-prompt review modal when order is delivered and not yet reviewed
+  useEffect(() => {
+    if (!currentOrder?.id) return;
+    const isDelivered = currentOrder.status === 'delivered' || currentOrder.status === 'completed';
+    if (isDelivered) {
+      const orderKey = `feedback_prompted_${currentOrder.id}`;
+      const alreadyPrompted = promptedOrdersRef.current.has(currentOrder.id) || sessionStorage.getItem(orderKey);
+      if (!alreadyPrompted) {
+        promptedOrdersRef.current.add(currentOrder.id);
+        sessionStorage.setItem(orderKey, 'true');
+        axios.get(`/orders/${currentOrder.id}/feedback`)
+          .then(res => {
+            if (res.data?.success && res.data?.data) {
+              setReviewedOrders(prev => ({ ...prev, [currentOrder.id]: res.data.data }));
+            } else {
+              const timer = setTimeout(() => {
+                openFeedbackModal(currentOrder);
+              }, 1000);
+              return () => clearTimeout(timer);
+            }
+          })
+          .catch(() => {
+            const timer = setTimeout(() => {
+              openFeedbackModal(currentOrder);
+            }, 1000);
+            return () => clearTimeout(timer);
+          });
+      }
+    }
+  }, [currentOrder?.id, currentOrder?.status]);
 
   // Live Driver Real-Time Movement ONLY runs when status is out_for_delivery / in_transit / picked_up (level 5)
   useEffect(() => {
@@ -848,6 +976,35 @@ export default function OrderTracking() {
                 </div>
               </div>
 
+              {/* Delivered Review Callout Box */}
+              {currentLevel >= 6 && (
+                <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-emerald-500/10 border-2 border-orange-300/80 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-fade-in">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center text-2xl flex-shrink-0 shadow-md">
+                      ⭐
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-neutral-900 text-sm">
+                        {reviewedOrders[currentOrder.id] || existingFeedback ? 'You Reviewed This Order!' : 'How was your meal & delivery experience?'}
+                      </h4>
+                      <p className="text-xs text-neutral-600 font-medium mt-0.5">
+                        {reviewedOrders[currentOrder.id] || existingFeedback
+                          ? `Rated "${(reviewedOrders[currentOrder.id] || existingFeedback).sentiment}" • Click to update review`
+                          : `Help ${currentOrder.restaurant?.name || 'the restaurant'} and ${currentOrder.driver?.name || 'the delivery driver'} by leaving your review.`}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openFeedbackModal(currentOrder)}
+                    className="px-5 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer flex-shrink-0"
+                  >
+                    <StarFilled className="text-amber-200 text-xs" />
+                    <span>{reviewedOrders[currentOrder.id] || existingFeedback ? 'Edit Review' : 'Write Review'}</span>
+                  </button>
+                </div>
+              )}
+
             </div>
 
             {/* CARD 2: LIVE LOCATION & REAL MAP */}
@@ -1238,6 +1395,16 @@ export default function OrderTracking() {
 
               {/* Bottom Action Buttons */}
               <div className="space-y-2.5 pt-2">
+                {currentLevel >= 6 && (
+                  <button
+                    onClick={() => openFeedbackModal(currentOrder)}
+                    className="w-full py-3 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
+                  >
+                    <StarFilled className="text-amber-200 text-sm" />
+                    <span>{reviewedOrders[currentOrder.id] || existingFeedback ? 'Update Your Review' : 'Write a Review & Rate Food'}</span>
+                  </button>
+                )}
+
                 <button
                   onClick={handleReorderAll}
                   className="w-full py-3 bg-white text-orange-600 border border-orange-500 font-bold text-xs rounded-xl hover:bg-orange-50 transition-colors flex items-center justify-center gap-2 shadow-2xs cursor-pointer"
@@ -1258,6 +1425,148 @@ export default function OrderTracking() {
 
         </div>
       </div>
+
+      {/* ── CUSTOMER FEEDBACK & REVIEW POPUP MODAL ── */}
+      <Modal
+        title={
+          <div className="flex items-center gap-2.5 text-slate-900 font-black text-lg">
+            <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-sm">
+              <StarFilled />
+            </div>
+            <div>
+              <span>How was your meal?</span>
+              <p className="text-[11px] text-slate-400 font-normal mt-0.5">
+                {currentOrder?.restaurant?.name || 'Restaurant'} • Order #{currentOrder?.orderNumber}
+              </p>
+            </div>
+          </div>
+        }
+        open={feedbackModalVisible}
+        onCancel={() => setFeedbackModalVisible(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setFeedbackModalVisible(false)} className="rounded-xl font-semibold">
+            Cancel
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            loading={submittingFeedback}
+            onClick={handleSubmitFeedback}
+            className="rounded-xl font-bold bg-[#FF521C] hover:bg-[#E04310] border-none text-white px-6 shadow-md"
+          >
+            {existingFeedback ? 'Update Review' : 'Submit Review'}
+          </Button>
+        ]}
+        width={540}
+        className="rounded-3xl overflow-hidden"
+      >
+        <div className="py-2 space-y-4 text-xs font-sans">
+          {existingFeedback && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-[11px] font-semibold flex items-center gap-2">
+              <StarFilled className="text-amber-500" />
+              <span>You previously submitted feedback for this order. Submitting now will update your review.</span>
+            </div>
+          )}
+
+          {/* Star Rating Bar */}
+          <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 flex flex-col items-center justify-center gap-1.5 text-center">
+            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Overall Rating</span>
+            <Rate
+              value={feedbackStarRating}
+              onChange={handleStarChange}
+              className="text-2xl text-amber-400"
+            />
+            <span className="text-xs font-extrabold text-slate-800">
+              {feedbackStarRating === 5
+                ? '⭐ Outstanding (5/5)'
+                : feedbackStarRating === 4
+                ? '⭐ Great Experience (4/5)'
+                : feedbackStarRating === 3
+                ? '⭐ Average (3/5)'
+                : feedbackStarRating === 2
+                ? '⭐ Below Expectations (2/5)'
+                : '⭐ Disappointed (1/5)'}
+            </span>
+          </div>
+
+          {/* Sentiment Cards */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+              Select Your Sentiment:
+            </label>
+            <div className="grid grid-cols-2 gap-2.5">
+              {[
+                { key: 'Happy', label: 'Happy', emoji: '😊', icon: <SmileOutlined className="text-emerald-500 text-base" />, desc: 'Loved the food & service', activeBg: 'bg-emerald-50 border-emerald-500 text-emerald-900' },
+                { key: 'Satisfied', label: 'Satisfied', emoji: '🙂', icon: <SmileOutlined className="text-blue-500 text-base" />, desc: 'Good and as expected', activeBg: 'bg-blue-50 border-blue-500 text-blue-900' },
+                { key: 'Unsatisfied', label: 'Unsatisfied', emoji: '😐', icon: <MehOutlined className="text-amber-500 text-base" />, desc: 'Could be improved', activeBg: 'bg-amber-50 border-amber-500 text-amber-900' },
+                { key: 'Bad', label: 'Bad', emoji: '😞', icon: <FrownOutlined className="text-rose-500 text-base" />, desc: 'Poor experience', activeBg: 'bg-rose-50 border-rose-500 text-rose-900' }
+              ].map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => handleSentimentChange(item.key)}
+                  className={`p-3 rounded-2xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between gap-1 ${
+                    feedbackSentiment === item.key
+                      ? item.activeBg + ' shadow-xs ring-2 ring-orange-500/20'
+                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="font-extrabold text-sm">{item.emoji} {item.label}</span>
+                    {item.icon}
+                  </div>
+                  <span className="text-[10px] text-slate-500 leading-tight">{item.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Quick Review Tag Chips */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              Quick Highlights:
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                'Delicious Taste 😋',
+                'Super Hot & Fresh 🔥',
+                'Fast Delivery ⚡',
+                'Neat Packaging 📦',
+                'Polite Driver 🛵',
+                'Accurate Order ✅',
+                'Generous Portion 🍱'
+              ].map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => handleTagClick(tag)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors cursor-pointer ${
+                    feedbackComment.includes(tag)
+                      ? 'bg-orange-500 text-white border-orange-500 shadow-2xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                  }`}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Comment Textarea */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              Your Review / Comments (Optional):
+            </label>
+            <TextArea
+              rows={3}
+              value={feedbackComment}
+              onChange={(e) => setFeedbackComment(e.target.value)}
+              placeholder="Tell us what you liked or what could be improved about the taste, temperature, packaging, or delivery..."
+              className="text-xs rounded-xl p-3 border-slate-200 focus:border-[#FF521C]"
+            />
+          </div>
+        </div>
+      </Modal>
 
     </div>
   );
