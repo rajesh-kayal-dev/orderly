@@ -276,17 +276,17 @@ export default function OrderTracking() {
     const parsedItems = itemsArr.map((it, idx) => ({
       id: it.menuItem?.id || it.menuItemId || it.menu_item_id || it.id || `it-${idx}`,
       name: it.menuItem?.name || it.name || it.menuItemName || 'Food Item',
-      variant: 'Regular',
+      variant: it.variant || it.size || 'Regular',
       quantity: it.quantity || 1,
-      price: Number(it.price || it.unitPrice || it.unit_price || it.menuItem?.price || 120.00),
-      image: it.menuItem?.image_url || it.image || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=200'
+      price: Number(it.price || it.unitPrice || it.unit_price || it.menuItem?.price || 0),
+      image: it.menuItem?.image_url || it.menuItem?.image || it.image_url || it.image || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=200'
     }));
 
     const totalPaid = Number(foundActive.total ?? foundActive.total_amount ?? foundActive.totalAmount ?? 0);
     const discountAmount = Number(foundActive.discount_amount ?? foundActive.discountAmount ?? foundActive.discount ?? 0);
     const couponCode = foundActive.coupon_code || foundActive.couponCode || null;
-    const deliveryFee = Number(foundActive.delivery_fee ?? foundActive.deliveryFee ?? (totalPaid > 0 ? 30.00 : 0));
-    const platformFee = Number(foundActive.platform_fee ?? foundActive.platformFee ?? (totalPaid > 0 ? 5.00 : 0));
+    const deliveryFee = Number(foundActive.delivery_fee ?? foundActive.deliveryFee ?? 0);
+    const platformFee = Number(foundActive.platform_fee ?? foundActive.platformFee ?? 0);
     const subtotal = Number(foundActive.subtotal ?? Math.max(0, totalPaid - deliveryFee - platformFee + discountAmount));
     const gst = Number(foundActive.tax ?? foundActive.gst ?? (Math.max(0, subtotal - discountAmount) * 0.05));
 
@@ -294,34 +294,34 @@ export default function OrderTracking() {
     const deliveryAddressText = typeof foundActive.delivery_address === 'string' && foundActive.delivery_address
       ? foundActive.delivery_address
       : addrObj
-      ? `${addrObj.street || addrObj.address_line1 || 'Address'}, ${addrObj.city || 'Indore'}`
-      : 'Delivery Address Specified at Checkout';
+      ? [addrObj.street || addrObj.address_line1, addrObj.city, addrObj.state, addrObj.postal_code || addrObj.zipCode].filter(Boolean).join(', ') || 'Delivery Address'
+      : 'Delivery Address';
 
     const custCoords = (addrObj && addrObj.latitude && addrObj.longitude)
       ? [parseFloat(addrObj.latitude), parseFloat(addrObj.longitude)]
-      : [22.7533, 75.8937];
+      : (foundActive.customer_coordinates || [22.7533, 75.8937]);
 
     const restCoords = (foundActive.restaurant?.latitude && foundActive.restaurant?.longitude)
       ? [parseFloat(foundActive.restaurant.latitude), parseFloat(foundActive.restaurant.longitude)]
-      : [22.7196, 75.8577];
+      : (foundActive.restaurant_coordinates || [22.7196, 75.8577]);
     
     const driverUser = foundActive.deliveryPartner?.user || foundActive.deliveryPartner?.User || foundActive.DeliveryPartner?.User || foundActive.DeliveryPartner?.user;
     const partnerData = foundActive.deliveryPartner || foundActive.DeliveryPartner;
     
     // Check if a real delivery partner is assigned
     const hasAssignedDriver = Boolean(
-      partnerData ||
-      driverUser ||
+      (partnerData && (partnerData.name || partnerData.fullName || partnerData.id)) ||
+      (driverUser && (driverUser.full_name || driverUser.fullName || driverUser.id)) ||
       foundActive.delivery_partner_id
     );
 
-    const driverName = partnerData?.fullName || partnerData?.name || driverUser?.full_name || driverUser?.fullName || (hasAssignedDriver ? "Assigned Delivery Partner" : "Delivery Partner");
-    const driverPhone = partnerData?.phone || partnerData?.phone_number || driverUser?.phone_number || driverUser?.phone || "+91 98456 78901";
-    const driverVehicleType = partnerData?.vehicle_type || "Motorcycle";
-    const driverVehicleNumber = partnerData?.vehicle_number || "MP-09-AB-1234";
-    const driverRating = partnerData?.rating || "4.9";
-    const driverDeliveries = partnerData?.deliveries || "120+ deliveries";
-    const driverAvatar = partnerData?.image || partnerData?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100";
+    const driverName = partnerData?.fullName || partnerData?.name || driverUser?.full_name || driverUser?.fullName || (hasAssignedDriver ? "Assigned Delivery Partner" : "");
+    const driverPhone = partnerData?.phone || partnerData?.phone_number || driverUser?.phone_number || driverUser?.phone || "";
+    const driverVehicleType = partnerData?.vehicle_type || (hasAssignedDriver ? "Motorcycle" : "");
+    const driverVehicleNumber = partnerData?.vehicle_number || "";
+    const driverRating = partnerData?.rating ? String(partnerData.rating) : "5.0";
+    const driverDeliveries = partnerData?.deliveries ? String(partnerData.deliveries) : "";
+    const driverAvatar = partnerData?.image || partnerData?.avatar || driverUser?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100";
     
     return {
       id: foundActive.id,
@@ -330,18 +330,18 @@ export default function OrderTracking() {
       statusDisplay: formatStatusDisplay(st),
       version: foundActive.version || 1,
       created_at: foundActive.created_at || foundActive.createdAt || new Date().toISOString(),
-      estimatedTime: st === 'delivered' || st === 'completed' ? 'Delivered' : st === 'cancelled' ? 'Cancelled' : '25 – 35 minutes',
+      estimatedTime: st === 'delivered' || st === 'completed' ? 'Delivered' : st === 'cancelled' ? 'Cancelled' : (foundActive.estimated_delivery_time || '25 – 35 minutes'),
       restaurant: {
-        id: foundActive.restaurant?.id || foundActive.Restaurant?.id || foundActive.restaurant_id || '1',
-        name: foundActive.restaurant?.name || foundActive.Restaurant?.name || "Orderly Gourmet Hub",
-        location: foundActive.restaurant?.address || foundActive.restaurant?.location || "Indore",
-        logo: foundActive.restaurant?.image_url || foundActive.restaurant?.image || foundActive.Restaurant?.image_url || "https://images.unsplash.com/photo-1550547660-d9450f859349?w=100",
-        phone: foundActive.restaurant?.phone_number || "+91 98345 67890"
+        id: foundActive.restaurant?.id || foundActive.Restaurant?.id || foundActive.restaurant_id || '',
+        name: foundActive.restaurant?.name || foundActive.Restaurant?.name || foundActive.restaurant_name || "Restaurant",
+        location: foundActive.restaurant?.address || foundActive.Restaurant?.address || foundActive.restaurant?.location || "",
+        logo: foundActive.restaurant?.image_url || foundActive.restaurant?.image || foundActive.Restaurant?.image_url || foundActive.Restaurant?.image || "https://images.unsplash.com/photo-1550547660-d9450f859349?w=100",
+        phone: foundActive.restaurant?.phone_number || foundActive.Restaurant?.phone_number || foundActive.restaurant?.phone || ""
       },
       driver: {
-        hasDriver: hasAssignedDriver,
-        name: driverName,
-        role: hasAssignedDriver ? "Assigned Delivery Partner" : "Searching partner...",
+        hasDriver: hasAssignedDriver && Boolean(driverName),
+        name: driverName || (['assigned', 'arrived', 'picked_up', 'out_for_delivery', 'in_transit', 'delivering', 'on_the_way', 'delivered', 'completed'].includes(st) ? "Delivery Partner" : ""),
+        role: hasAssignedDriver ? "Assigned Delivery Partner" : "Searching for delivery partner...",
         rating: driverRating,
         deliveries: driverDeliveries,
         phone: driverPhone,
