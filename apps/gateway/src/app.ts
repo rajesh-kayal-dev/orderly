@@ -4249,7 +4249,17 @@ export function createGatewayApp(): express.Express {
       customerOrders = customerOrders.slice(0, limit);
     }
 
-    return void res.json({ success: true, data: customerOrders, total: customerOrders.length });
+    const formatted = customerOrders.map((o) => {
+      const rest = restaurants.find((r) => r.id === o.restaurant_id) || restaurants[0];
+      const assignedDriver = findDeliveryPartner(o.delivery_partner_id);
+      return {
+        ...o,
+        restaurant: rest,
+        deliveryPartner: assignedDriver,
+      };
+    });
+
+    return void res.json({ success: true, data: formatted, total: formatted.length });
   });
 
   app.get(["/orders/restaurant/me", "/restaurant/orders"], authenticate, (req, res) => {
@@ -4441,6 +4451,83 @@ export function createGatewayApp(): express.Express {
     return void res.json({ success: true, data: order, message: `Order status updated to ${newStatus}` });
   });
 
+  // Helper to accurately find the assigned delivery partner without incorrect fallback
+  function findDeliveryPartner(driverId: string | null | undefined) {
+    if (!driverId) return null;
+    const rawId = String(driverId).trim();
+    const cleanId = rawId.replace(/^(dp-|usr-|partner-)/, "");
+
+    // 1. Search in deliveryPartners array by any identifier
+    let dp = deliveryPartners.find((d: any) => {
+      if (!d) return false;
+      const dId = String(d.id || "");
+      const dUserId = String(d.userId || "");
+      const dCleanId = dId.replace(/^(dp-|usr-|partner-)/, "");
+      const dUserCleanId = dUserId.replace(/^(dp-|usr-|partner-)/, "");
+
+      return (
+        dId === rawId ||
+        dUserId === rawId ||
+        dCleanId === cleanId ||
+        dUserCleanId === cleanId ||
+        (d.email && d.email.toLowerCase() === rawId.toLowerCase())
+      );
+    });
+
+    // 2. Search in users array
+    const u = users.find((usr: any) => {
+      if (!usr) return false;
+      const uId = String(usr.id || "");
+      const uCleanId = uId.replace(/^(dp-|usr-|partner-)/, "");
+      return (
+        uId === rawId ||
+        uCleanId === cleanId ||
+        (usr.email && usr.email.toLowerCase() === rawId.toLowerCase())
+      );
+    });
+
+    if (!dp && !u) {
+      return null;
+    }
+
+    const fullName = dp?.name || dp?.fullName || u?.full_name || (u as any)?.fullName || "Assigned Driver";
+    const phone = dp?.phone || dp?.phone_number || u?.phone_number || (u as any)?.phoneNumber || "+91 98456 78901";
+    const vehicleType = dp?.vehicle_type || (u as any)?.vehicle_type || "Motorcycle";
+    const vehicleNumber = dp?.vehicle_number || (u as any)?.vehicle_number || "MP-09-AB-1234";
+    const rating = dp?.rating || 4.9;
+    const deliveries = dp?.deliveries || "120+ deliveries";
+    const avatar = dp?.image || dp?.avatar || (u as any)?.image || (u as any)?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100";
+    const currentLocation = dp?.current_location || { lat: 22.7196, lng: 75.8577 };
+
+    return {
+      id: dp?.id || u?.id || rawId,
+      userId: dp?.userId || u?.id || rawId,
+      name: fullName,
+      fullName: fullName,
+      phone: phone,
+      phone_number: phone,
+      rating: rating,
+      deliveries: deliveries,
+      vehicle_type: vehicleType,
+      vehicle_number: vehicleNumber,
+      avatar: avatar,
+      image: avatar,
+      current_location: currentLocation,
+      user: {
+        id: u?.id || dp?.userId || rawId,
+        full_name: fullName,
+        phone_number: phone,
+        email: u?.email || dp?.email || "driver@orderly.com",
+      },
+      User: {
+        id: u?.id || dp?.userId || rawId,
+        full_name: fullName,
+        phone_number: phone,
+        email: u?.email || dp?.email || "driver@orderly.com",
+      },
+    };
+  }
+
   app.get("/orders/:id", authenticate, (req, res) => {
     const user = (req as any).user;
     const order = orders.find((o) => o.id === req.params.id);
@@ -4455,29 +4542,14 @@ export function createGatewayApp(): express.Express {
       return void res.status(403).json({ success: false, message: "Access denied to this order" });
     }
 
-    const assignedDriver = deliveryPartners.find((d) => d.userId === order.delivery_partner_id || d.id === order.delivery_partner_id) || deliveryPartners[0];
+    const assignedDriver = findDeliveryPartner(order.delivery_partner_id);
     const rest = restaurants.find((r) => r.id === order.restaurant_id) || restaurants[0];
 
     return void res.json({
       success: true,
       data: {
         ...order,
-        deliveryPartner: assignedDriver
-          ? {
-              id: assignedDriver.id,
-              name: assignedDriver.name || assignedDriver.fullName,
-              phone: assignedDriver.phone,
-              rating: assignedDriver.rating,
-              deliveries: assignedDriver.deliveries,
-              vehicle_type: assignedDriver.vehicle_type,
-              vehicle_number: assignedDriver.vehicle_number,
-              avatar: assignedDriver.image,
-              user: {
-                full_name: assignedDriver.name || assignedDriver.fullName,
-                phone_number: assignedDriver.phone,
-              },
-            }
-          : null,
+        deliveryPartner: assignedDriver,
         restaurant: rest
           ? {
               id: rest.id,
@@ -4504,7 +4576,7 @@ export function createGatewayApp(): express.Express {
       return void res.status(403).json({ success: false, message: "Access denied to this order" });
     }
 
-    const assignedDriver: any = deliveryPartners.find((d: any) => d.userId === order.delivery_partner_id || d.id === order.delivery_partner_id) || deliveryPartners[0];
+    const assignedDriver = findDeliveryPartner(order.delivery_partner_id);
     const rest = restaurants.find((r) => r.id === order.restaurant_id) || restaurants[0];
 
     return void res.json({
@@ -4515,22 +4587,7 @@ export function createGatewayApp(): express.Express {
         delivery_address: order.delivery_address,
         estimated_delivery_time: "25-35 mins",
         driver_location: assignedDriver?.current_location || { lat: 22.7196, lng: 75.8577 },
-        deliveryPartner: assignedDriver
-          ? {
-              id: assignedDriver.id,
-              name: assignedDriver.name || assignedDriver.fullName,
-              phone: assignedDriver.phone,
-              rating: assignedDriver.rating,
-              deliveries: assignedDriver.deliveries,
-              vehicle_type: assignedDriver.vehicle_type,
-              vehicle_number: assignedDriver.vehicle_number,
-              avatar: assignedDriver.image,
-              user: {
-                full_name: assignedDriver.name || assignedDriver.fullName,
-                phone_number: assignedDriver.phone,
-              },
-            }
-          : null,
+        deliveryPartner: assignedDriver,
         restaurant: rest
           ? {
               id: rest.id,

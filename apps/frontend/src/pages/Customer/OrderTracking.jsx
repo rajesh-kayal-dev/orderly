@@ -305,8 +305,23 @@ export default function OrderTracking() {
       ? [parseFloat(foundActive.restaurant.latitude), parseFloat(foundActive.restaurant.longitude)]
       : [22.7196, 75.8577];
     
-    const driverUser = foundActive.deliveryPartner?.user || foundActive.DeliveryPartner?.User;
+    const driverUser = foundActive.deliveryPartner?.user || foundActive.deliveryPartner?.User || foundActive.DeliveryPartner?.User || foundActive.DeliveryPartner?.user;
     const partnerData = foundActive.deliveryPartner || foundActive.DeliveryPartner;
+    
+    // Check if a real delivery partner is assigned
+    const hasAssignedDriver = Boolean(
+      partnerData ||
+      driverUser ||
+      foundActive.delivery_partner_id
+    );
+
+    const driverName = partnerData?.fullName || partnerData?.name || driverUser?.full_name || driverUser?.fullName || (hasAssignedDriver ? "Assigned Delivery Partner" : "Delivery Partner");
+    const driverPhone = partnerData?.phone || partnerData?.phone_number || driverUser?.phone_number || driverUser?.phone || "+91 98456 78901";
+    const driverVehicleType = partnerData?.vehicle_type || "Motorcycle";
+    const driverVehicleNumber = partnerData?.vehicle_number || "MP-09-AB-1234";
+    const driverRating = partnerData?.rating || "4.9";
+    const driverDeliveries = partnerData?.deliveries || "120+ deliveries";
+    const driverAvatar = partnerData?.image || partnerData?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100";
     
     return {
       id: foundActive.id,
@@ -324,14 +339,15 @@ export default function OrderTracking() {
         phone: foundActive.restaurant?.phone_number || "+91 98345 67890"
       },
       driver: {
-        name: partnerData?.fullName || partnerData?.name || driverUser?.full_name || "Vikram Singh",
-        role: partnerData ? "Assigned Delivery Partner" : "Searching partner...",
-        rating: partnerData?.rating || "4.9",
-        deliveries: partnerData?.deliveries || "850+ deliveries",
-        phone: partnerData?.phone || driverUser?.phone_number || "+91 98456 78901",
-        vehicle_type: partnerData?.vehicle_type || "Motorcycle",
-        vehicle_number: partnerData?.vehicle_number || "MP-09-AB-1234",
-        avatar: partnerData?.image || partnerData?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100"
+        hasDriver: hasAssignedDriver,
+        name: driverName,
+        role: hasAssignedDriver ? "Assigned Delivery Partner" : "Searching partner...",
+        rating: driverRating,
+        deliveries: driverDeliveries,
+        phone: driverPhone,
+        vehicle_type: driverVehicleType,
+        vehicle_number: driverVehicleNumber,
+        avatar: driverAvatar
       },
       deliveryAddressText: deliveryAddressText,
       deliveryAddress: addrObj,
@@ -1084,7 +1100,7 @@ export default function OrderTracking() {
               <div className="h-[380px] rounded-2xl overflow-hidden relative border border-neutral-200/80 shadow-inner z-0">
                 
                 {/* Floating Driver / Restaurant Info Overlay */}
-                {currentLevel >= 4 ? (
+                {currentLevel >= 4 && currentOrder.driver?.hasDriver ? (
                   <div className="absolute top-4 right-4 z-20 bg-white/95 backdrop-blur-md border border-neutral-200/80 rounded-2xl p-3.5 shadow-lg flex items-center gap-3">
                     <div className="w-11 h-11 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 text-white font-black text-sm flex items-center justify-center border border-orange-200 flex-shrink-0 shadow-xs tracking-wider select-none">
                       {((currentOrder.driver?.name || 'DP').trim().split(/\s+/).map(n => n[0]).join('').slice(0, 2)).toUpperCase()}
