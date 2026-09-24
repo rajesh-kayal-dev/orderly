@@ -68,18 +68,45 @@ export default function DeliveryLayout() {
 
     // Fetch persistent delivery notifications on mount
     axios.get('/notifications').then((res) => {
-      if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+      if (res.data?.success && Array.isArray(res.data.data)) {
         const mapped = res.data.data.map((n) => ({
           id: n.id,
           title: n.title || n.message,
+          message: n.message,
           time: n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently',
           read: Boolean(n.read),
-          link: '/delivery/orders',
+          link: n.link || '/delivery',
           orderId: n.orderId,
         }));
         setNotificationsList(mapped);
       }
     }).catch(() => {});
+
+    const handleNewNotification = (data) => {
+      if (!data) return;
+      const notif = {
+        id: data.id || Date.now(),
+        title: data.title || data.message || 'Notification',
+        message: data.message,
+        time: data.createdAt ? new Date(data.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+        read: Boolean(data.read),
+        link: data.link || '/delivery',
+        orderId: data.orderId,
+      };
+      setNotificationsList((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
+    };
+
+    const handlePartnerApproved = (data) => {
+      const notif = {
+        id: `approved-${Date.now()}`,
+        title: 'Account & Vehicle Approved! 🎉',
+        message: 'Congratulations! Your delivery partner account has been verified and approved. You can now go online and accept orders.',
+        time: 'Just now',
+        read: false,
+        link: '/delivery',
+      };
+      setNotificationsList((prev) => [notif, ...prev.filter((n) => n.title !== notif.title)]);
+    };
 
     const handleDeliveryOffer = (data) => {
       if (!isOnline) return;
@@ -87,6 +114,7 @@ export default function DeliveryLayout() {
       const notif = {
         id: Date.now(),
         title: `New Delivery Available! #${orderNum}`,
+        message: `Pickup available for Order #${orderNum}`,
         time: 'Just now',
         read: false,
         link: '/delivery/orders',
@@ -101,6 +129,7 @@ export default function DeliveryLayout() {
       const notif = {
         id: Date.now(),
         title: `Order #${orderNum} Ready for Pickup!`,
+        message: `Order #${orderNum} is ready for pickup from restaurant.`,
         time: 'Just now',
         read: false,
         link: '/delivery/orders',
@@ -114,6 +143,7 @@ export default function DeliveryLayout() {
       const notif = {
         id: Date.now(),
         title: `Order #${orderNum} assigned to you!`,
+        message: `You are assigned to deliver Order #${orderNum}.`,
         time: 'Just now',
         read: false,
         link: '/delivery/orders',
@@ -127,12 +157,16 @@ export default function DeliveryLayout() {
       setNotificationsList(prev => prev.filter(n => n.orderId !== data.orderId));
     };
 
+    socket.on('NEW_NOTIFICATION', handleNewNotification);
+    socket.on('PARTNER_APPROVED', handlePartnerApproved);
     socket.on('AVAILABLE_DELIVERY', handleDeliveryOffer);
     socket.on('ORDER_READY_FOR_PICKUP', handleReadyForPickup);
     socket.on('DRIVER_ASSIGNED', handleDriverAssigned);
     socket.on('ORDER_ACCEPTED', handleOrderAccepted);
 
     return () => {
+      socket.off('NEW_NOTIFICATION', handleNewNotification);
+      socket.off('PARTNER_APPROVED', handlePartnerApproved);
       socket.off('AVAILABLE_DELIVERY', handleDeliveryOffer);
       socket.off('ORDER_READY_FOR_PICKUP', handleReadyForPickup);
       socket.off('DRIVER_ASSIGNED', handleDriverAssigned);
@@ -149,10 +183,12 @@ export default function DeliveryLayout() {
 
   const markAllRead = () => {
     setNotificationsList(prev => prev.map(n => ({ ...n, read: true })));
+    axios.post('/notifications/read-all').catch(() => {});
   };
 
   const clearNotifications = () => {
     setNotificationsList([]);
+    axios.delete('/notifications').catch(() => {});
   };
 
   const unreadCount = notificationsList.filter(n => !n.read).length;
@@ -342,6 +378,7 @@ export default function DeliveryLayout() {
                           key={item.id}
                           onClick={() => {
                             setNotificationsList(prev => prev.map(n => n.id === item.id ? { ...n, read: true } : n));
+                            if (item.id) axios.patch(`/notifications/${item.id}/read`).catch(() => {});
                             setShowNotifications(false);
                             navigate(item.link || '/delivery/orders');
                           }}
@@ -349,12 +386,17 @@ export default function DeliveryLayout() {
                             item.read ? 'bg-slate-50/50 border-slate-100 text-slate-500' : 'bg-orange-50/40 border-orange-100/80 text-slate-800 font-semibold'
                           }`}
                         >
-                          <div className="space-y-0.5 flex-1">
+                          <div className="space-y-0.5 flex-1 min-w-0">
                             <div className="flex items-center justify-between">
-                              <p className="text-xs font-bold leading-tight group-hover:text-orange-600 transition-colors">{item.title}</p>
-                              <span className="text-[9px] text-orange-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity ml-1">View ➔</span>
+                              <p className="text-xs font-bold leading-tight group-hover:text-orange-600 transition-colors truncate">{item.title}</p>
+                              <span className="text-[9px] text-orange-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity ml-1 shrink-0">View ➔</span>
                             </div>
-                            <p className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                            {item.message && item.message !== item.title && (
+                              <p className="text-[10.5px] text-slate-500 font-normal leading-tight line-clamp-2 mt-0.5">
+                                {item.message}
+                              </p>
+                            )}
+                            <p className="text-[10px] text-slate-400 font-medium flex items-center gap-1 mt-0.5">
                               <ClockCircleOutlined className="text-[9px]" /> {item.time}
                             </p>
                           </div>

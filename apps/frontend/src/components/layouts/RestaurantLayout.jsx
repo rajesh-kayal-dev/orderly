@@ -44,11 +44,7 @@ export default function RestaurantLayout() {
 
   // Notification Popover State
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notificationsList, setNotificationsList] = useState([
-    { id: 1, title: 'New Order #ORD-8821', time: '5 mins ago', read: false, link: '/restaurant/orders' },
-    { id: 2, title: 'Table #4 requested bill', time: '18 mins ago', read: false, link: '/restaurant/orders' },
-    { id: 3, title: 'Weekly payout ₹12,450 credited', time: '1 hour ago', read: true, link: '/restaurant/payouts' }
-  ]);
+  const [notificationsList, setNotificationsList] = useState([]);
   const notificationRef = useRef(null);
 
   // Dynamic Date Display
@@ -107,23 +103,50 @@ export default function RestaurantLayout() {
 
       // Fetch persistent notifications on mount
       axios.get('/notifications').then((res) => {
-        if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+        if (res.data?.success && Array.isArray(res.data.data)) {
           const mapped = res.data.data.map((n) => ({
             id: n.id,
             title: n.title || n.message,
+            message: n.message,
             time: n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently',
             read: Boolean(n.read),
-            link: '/restaurant/orders'
+            link: n.link || '/restaurant'
           }));
           setNotificationsList(mapped);
         }
       }).catch(() => {});
+
+      const handleNewNotification = (notif) => {
+        if (!notif) return;
+        const newNotif = {
+          id: notif.id || Date.now(),
+          title: notif.title || notif.message,
+          message: notif.message,
+          time: notif.createdAt ? new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+          read: Boolean(notif.read),
+          link: notif.link || '/restaurant'
+        };
+        setNotificationsList(prev => [newNotif, ...prev.filter(n => n.id !== newNotif.id)]);
+      };
+
+      const handleRestaurantApproved = (data) => {
+        const approveNotif = {
+          id: `approved-${Date.now()}`,
+          title: 'Restaurant Approved! 🎉',
+          message: `Congratulations! Your restaurant has been approved by admin. You can now manage your menu and start accepting customer orders.`,
+          time: 'Just now',
+          read: false,
+          link: '/restaurant/menu'
+        };
+        setNotificationsList(prev => [approveNotif, ...prev.filter(n => n.title !== approveNotif.title)]);
+      };
 
       const handleNewOrder = (data) => {
         const orderNum = data.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'REC';
         const newNotif = {
           id: Date.now(),
           title: `New Order #${orderNum} received!${data.total ? ` (₹${data.total})` : ''}`,
+          message: `Customer placed an order #${orderNum}`,
           time: 'Just now',
           read: false,
           link: '/restaurant/orders'
@@ -136,6 +159,7 @@ export default function RestaurantLayout() {
         const newNotif = {
           id: Date.now(),
           title: `Order #${orderNum} updated to ${data.status ? data.status.replace(/_/g, ' ') : 'new status'}`,
+          message: `Status updated to ${data.status}`,
           time: 'Just now',
           read: false,
           link: '/restaurant/orders'
@@ -143,9 +167,13 @@ export default function RestaurantLayout() {
         setNotificationsList(prev => [newNotif, ...prev]);
       };
 
+      socket.on('NEW_NOTIFICATION', handleNewNotification);
+      socket.on('RESTAURANT_APPROVED', handleRestaurantApproved);
       socket.on('NEW_ORDER', handleNewOrder);
       socket.on('ORDER_STATUS_UPDATED', handleStatusUpdate);
       return () => {
+        socket.off('NEW_NOTIFICATION', handleNewNotification);
+        socket.off('RESTAURANT_APPROVED', handleRestaurantApproved);
         socket.off('NEW_ORDER', handleNewOrder);
         socket.off('ORDER_STATUS_UPDATED', handleStatusUpdate);
       };
@@ -208,10 +236,12 @@ export default function RestaurantLayout() {
 
   const markAllRead = () => {
     setNotificationsList(prev => prev.map(n => ({ ...n, read: true })));
+    axios.post('/notifications/read-all').catch(() => {});
   };
 
   const clearAllNotifications = () => {
     setNotificationsList([]);
+    axios.delete('/notifications').catch(() => {});
   };
 
   const unreadCount = notificationsList.filter(n => !n.read).length;
@@ -471,6 +501,7 @@ export default function RestaurantLayout() {
                           key={item.id}
                           onClick={() => {
                             setNotificationsList(prev => prev.map(n => n.id === item.id ? { ...n, read: true } : n));
+                            if (item.id) axios.patch(`/notifications/${item.id}/read`).catch(() => {});
                             setShowNotifications(false);
                             navigate(item.link || '/restaurant/orders');
                           }}
@@ -478,12 +509,17 @@ export default function RestaurantLayout() {
                             item.read ? 'bg-slate-50/50 border-slate-100 text-slate-500' : 'bg-orange-50/40 border-orange-100/80 text-slate-800 font-semibold'
                           }`}
                         >
-                          <div className="space-y-0.5 flex-1">
+                          <div className="space-y-0.5 flex-1 min-w-0">
                             <div className="flex items-center justify-between">
-                              <p className="text-xs font-bold leading-tight group-hover:text-orange-600 transition-colors">{item.title}</p>
-                              <span className="text-[9px] text-orange-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity ml-1">View ➔</span>
+                              <p className="text-xs font-bold leading-tight group-hover:text-orange-600 transition-colors truncate">{item.title}</p>
+                              <span className="text-[9px] text-orange-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity ml-1 shrink-0">View ➔</span>
                             </div>
-                            <p className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                            {item.message && item.message !== item.title && (
+                              <p className="text-[10.5px] text-slate-500 font-normal leading-tight line-clamp-2 mt-0.5">
+                                {item.message}
+                              </p>
+                            )}
+                            <p className="text-[10px] text-slate-400 font-medium flex items-center gap-1 mt-0.5">
                               <ClockCircleOutlined className="text-[9px]" /> {item.time}
                             </p>
                           </div>

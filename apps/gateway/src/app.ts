@@ -4182,15 +4182,26 @@ export function createGatewayApp(): express.Express {
   // ==========================================
   app.get("/notifications", authenticate, (req, res) => {
     const authUser = (req as any).user;
-    const userId = authUser?.id;
+    const userId = authUser?.id || "";
+    const cleanUserId = userId.replace(/^(rest-|dp-|usr-)/, "");
     const role = (authUser?.role || "").toLowerCase();
-    const userNotifs = notifications.filter((n) =>
-      n.userId === userId ||
-      n.userId === "all" ||
-      (role === "admin" && (n.userId === "role_admin" || n.userId === "admin")) ||
-      (role === "restaurant" && (n.userId === "role_restaurant" || n.userId === `rest-${userId}` || n.userId === userId)) ||
-      (role === "delivery_partner" && (n.userId === "role_delivery" || n.userId === `dp-${userId}` || n.userId === userId))
-    );
+    
+    const userNotifs = notifications.filter((n) => {
+      if (!n) return false;
+      if (n.userId === "all") return true;
+      if (n.userId === userId) return true;
+      if (n.userId === `rest-${userId}` || n.userId === `dp-${userId}`) return true;
+      if (userId && (n.userId === cleanUserId || n.userId === `usr-${cleanUserId}`)) return true;
+      if (role === "admin" && (n.userId === "role_admin" || n.userId === "admin")) return true;
+      if (role === "restaurant" && (n.userId === "role_restaurant" || (n.role === "restaurant" && n.userId === userId) || n.userId === `rest-${userId}`)) return true;
+      if (role === "delivery_partner" && (n.userId === "role_delivery" || (n.role === "delivery_partner" && n.userId === userId) || n.userId === `dp-${userId}`)) return true;
+      if (role === "customer" && (n.userId === "role_customer" || (n.role === "customer" && n.userId === userId))) return true;
+      return false;
+    });
+
+    // Return newest first
+    userNotifs.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
     return void res.json({ success: true, data: userNotifs });
   });
 
@@ -4202,12 +4213,17 @@ export function createGatewayApp(): express.Express {
 
   app.post("/notifications/read-all", authenticate, (req, res) => {
     const authUser = (req as any).user;
-    const userId = authUser?.id;
+    const userId = authUser?.id || "";
+    const cleanUserId = userId.replace(/^(rest-|dp-|usr-)/, "");
     const role = (authUser?.role || "").toLowerCase();
+    
     notifications.forEach((n) => {
       if (
         n.userId === userId ||
         n.userId === "all" ||
+        n.userId === `rest-${userId}` ||
+        n.userId === `dp-${userId}` ||
+        n.userId === cleanUserId ||
         (role === "admin" && (n.userId === "role_admin" || n.userId === "admin")) ||
         (role === "restaurant" && (n.userId === "role_restaurant" || n.userId === `rest-${userId}`)) ||
         (role === "delivery_partner" && (n.userId === "role_delivery" || n.userId === `dp-${userId}`))
@@ -4216,6 +4232,28 @@ export function createGatewayApp(): express.Express {
       }
     });
     return void res.json({ success: true });
+  });
+
+  app.delete("/notifications", authenticate, (req, res) => {
+    const authUser = (req as any).user;
+    const userId = authUser?.id || "";
+    const cleanUserId = userId.replace(/^(rest-|dp-|usr-)/, "");
+    const role = (authUser?.role || "").toLowerCase();
+
+    for (let i = notifications.length - 1; i >= 0; i--) {
+      const n = notifications[i];
+      if (
+        n.userId === userId ||
+        n.userId === `rest-${userId}` ||
+        n.userId === `dp-${userId}` ||
+        n.userId === cleanUserId ||
+        (role === "restaurant" && n.userId === `rest-${userId}`) ||
+        (role === "delivery_partner" && n.userId === `dp-${userId}`)
+      ) {
+        notifications.splice(i, 1);
+      }
+    }
+    return void res.json({ success: true, message: "Notifications cleared" });
   });
 
   // ==========================================
@@ -4391,21 +4429,45 @@ export function createGatewayApp(): express.Express {
       await dbPool.query(`UPDATE "User" SET status = 'ACTIVE', is_active = true WHERE id = $1;`, [user.id]);
     } catch {}
 
+    const io = getSocketIO();
+
     // If restaurant account, activate restaurant
     if (user.role === "restaurant" || (user.role as any) === "partner") {
       const rest = restaurants.find(
         (r) => r.owner_id === user.id || r.user_id === user.id || r.id === user.id || r.id === `rest-${user.id}`
       );
+      const restName = rest?.name || user.full_name || "Restaurant";
       if (rest) {
         rest.is_active = true;
         rest.is_accepting_orders = true;
+        rest.status = "ACTIVE";
       }
       try {
         await dbPool.query(
-          `UPDATE "Restaurant" SET is_active = true WHERE user_id = $1 OR id = $1 OR id = $2;`,
+          `UPDATE "Restaurant" SET is_active = true, status = 'ACTIVE' WHERE user_id = $1 OR id = $1 OR id = $2;`,
           [user.id, `rest-${user.id}`]
         );
       } catch {}
+
+      const approveNotif = {
+        id: `notif-${Date.now()}`,
+        userId: user.id,
+        type: "Approval",
+        role: "restaurant",
+        link: "/restaurant/menu",
+        title: "Restaurant Approved! 🎉",
+        message: `Congratulations! "${restName}" has been approved by admin. You can now manage your menu and start accepting customer orders.`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      };
+      notifications.unshift(approveNotif);
+
+      if (io) {
+        io.to(user.id).emit("NEW_NOTIFICATION", approveNotif);
+        if (rest?.id) io.to(`restaurant_${rest.id}`).emit("NEW_NOTIFICATION", approveNotif);
+        io.to("role_restaurant").emit("NEW_NOTIFICATION", approveNotif);
+        io.to(user.id).emit("RESTAURANT_APPROVED", { id: rest?.id || user.id, name: restName, status: "ACTIVE" });
+      }
     }
 
     // If delivery partner account, activate and broadcast status
@@ -4413,6 +4475,8 @@ export function createGatewayApp(): express.Express {
       const existingDp = deliveryPartners.find((dp) => dp.userId === user.id || dp.id === user.id);
       if (existingDp) {
         existingDp.is_available = true;
+        existingDp.status = "ACTIVE";
+        existingDp.is_active = true;
       } else {
         deliveryPartners.push({
           id: `dp-${user.id}`,
@@ -4420,18 +4484,48 @@ export function createGatewayApp(): express.Express {
           fullName: user.full_name,
           name: user.full_name,
           phone: user.phone_number || "+91 98456" + Math.floor(1000 + Math.random() * 9000),
-          area: "Salt Lake, Kolkata",
-          deliveries: "120+",
+          area: "City Center",
+          deliveries: "0",
           vehicle_type: "Motorcycle",
-          vehicle_number: "WB-12-AK-" + Math.floor(1000 + Math.random() * 9000),
+          vehicle_number: "DL-01-AB-" + Math.floor(1000 + Math.random() * 9000),
           is_available: true,
+          status: "ACTIVE",
+          is_active: true,
           rating: 4.9,
           image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60",
-          current_location: { lat: 22.5726, lng: 88.3639 },
+          current_location: { lat: 22.7196, lng: 75.8577 },
         });
       }
-      const io = getSocketIO();
+
+      try {
+        await dbPool.query(
+          `UPDATE "DeliveryPartner" SET status = 'ACTIVE', is_available = true WHERE user_id = $1 OR id = $2;`,
+          [user.id, `dp-${user.id}`]
+        );
+      } catch {}
+
+      const approveNotif = {
+        id: `notif-${Date.now()}`,
+        userId: user.id,
+        type: "Approval",
+        role: "delivery_partner",
+        link: "/delivery",
+        title: "Account & Vehicle Approved! 🎉",
+        message: `Congratulations ${user.full_name || 'Partner'}! Your delivery partner account has been verified and approved. You can now go online and accept orders.`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      };
+      notifications.unshift(approveNotif);
+
       if (io) {
+        io.to(user.id).emit("NEW_NOTIFICATION", approveNotif);
+        io.to("role_delivery").emit("NEW_NOTIFICATION", approveNotif);
+        io.to(user.id).emit("PARTNER_APPROVED", {
+          id: user.id,
+          status: "ACTIVE",
+          is_active: true,
+          is_available: true,
+        });
         io.emit("DRIVER_STATUS_UPDATED", {
           userId: user.id,
           driverId: user.id,
@@ -4790,6 +4884,50 @@ export function createGatewayApp(): express.Express {
       { oldStatus, newStatus: targetStatus, ownerId: owner?.id }
     );
 
+    const targetOwnerId = owner?.id || rest.owner_id || rest.user_id || `rest-${rest.id}`;
+
+    if (targetStatus === "ACTIVE") {
+      const approveNotif = {
+        id: `notif-${Date.now()}`,
+        userId: targetOwnerId,
+        type: "Approval",
+        role: "restaurant",
+        link: "/restaurant/menu",
+        title: "Restaurant Approved! 🎉",
+        message: `Congratulations! "${rest.name}" has been approved by admin. You can now manage your menu and start accepting customer orders.`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      };
+      notifications.unshift(approveNotif);
+
+      const io = getSocketIO();
+      if (io) {
+        if (targetOwnerId) io.to(targetOwnerId).emit("NEW_NOTIFICATION", approveNotif);
+        io.to(`restaurant_${rest.id}`).emit("NEW_NOTIFICATION", approveNotif);
+        io.to("role_restaurant").emit("NEW_NOTIFICATION", approveNotif);
+        if (targetOwnerId) io.to(targetOwnerId).emit("RESTAURANT_APPROVED", { id: rest.id, name: rest.name, status: "ACTIVE" });
+      }
+    } else if (targetStatus === "SUSPENDED" || targetStatus === "BLOCKED") {
+      const alertNotif = {
+        id: `notif-${Date.now()}`,
+        userId: targetOwnerId,
+        type: "Account",
+        role: "restaurant",
+        link: "/restaurant/settings",
+        title: `Restaurant ${targetStatus === "BLOCKED" ? "Blocked" : "Suspended"}`,
+        message: `Your restaurant "${rest.name}" has been ${targetStatus.toLowerCase()} by administration.${reason ? ` Reason: ${reason}` : ""}`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      };
+      notifications.unshift(alertNotif);
+      const io = getSocketIO();
+      if (io) {
+        if (targetOwnerId) io.to(targetOwnerId).emit("NEW_NOTIFICATION", alertNotif);
+        io.to(`restaurant_${rest.id}`).emit("NEW_NOTIFICATION", alertNotif);
+        io.to("role_restaurant").emit("NEW_NOTIFICATION", alertNotif);
+      }
+    }
+
     // Broadcast socket event
     const io = getSocketIO();
     if (io) {
@@ -5081,6 +5219,53 @@ export function createGatewayApp(): express.Express {
       reason,
       { oldStatus, newStatus: targetStatus }
     );
+
+    const driverUserId = u?.id || dp?.userId || cleanId;
+
+    if (targetStatus === "ACTIVE") {
+      const approveNotif = {
+        id: `notif-${Date.now()}`,
+        userId: driverUserId,
+        type: "Approval",
+        role: "delivery_partner",
+        link: "/delivery",
+        title: "Account & Vehicle Approved! 🎉",
+        message: `Congratulations ${driverName}! Your delivery partner account has been verified and approved. You can now go online and accept delivery orders.`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      };
+      notifications.unshift(approveNotif);
+
+      const io = getSocketIO();
+      if (io) {
+        io.to(driverUserId).emit("NEW_NOTIFICATION", approveNotif);
+        io.to("role_delivery").emit("NEW_NOTIFICATION", approveNotif);
+        io.to(driverUserId).emit("PARTNER_APPROVED", {
+          id: driverUserId,
+          status: targetStatus,
+          is_active: true,
+          is_available: true,
+        });
+      }
+    } else if (targetStatus === "SUSPENDED" || targetStatus === "BLOCKED") {
+      const alertNotif = {
+        id: `notif-${Date.now()}`,
+        userId: driverUserId,
+        type: "Account",
+        role: "delivery_partner",
+        link: "/delivery/profile",
+        title: `Account ${targetStatus === "BLOCKED" ? "Blocked" : "Suspended"}`,
+        message: `Your delivery partner account has been ${targetStatus.toLowerCase()} by administration.${reason ? ` Reason: ${reason}` : ""}`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      };
+      notifications.unshift(alertNotif);
+      const io = getSocketIO();
+      if (io) {
+        io.to(driverUserId).emit("NEW_NOTIFICATION", alertNotif);
+        io.to("role_delivery").emit("NEW_NOTIFICATION", alertNotif);
+      }
+    }
 
     const io = getSocketIO();
     if (io) {
