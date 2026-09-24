@@ -3496,7 +3496,7 @@ export function createGatewayApp(): express.Express {
       accepted: restaurantOrders.filter((o) => o.status === "accepted").length,
       preparing: restaurantOrders.filter((o) => o.status === "preparing").length,
       ready: restaurantOrders.filter((o) => o.status === "ready" || o.status === "ready_for_pickup").length,
-      picked_up: restaurantOrders.filter((o) => o.status === "picked_up" || o.status === "in_transit").length,
+      picked_up: restaurantOrders.filter((o) => ["assigned", "arrived", "picked_up", "out_for_delivery", "in_transit", "delivering", "on_the_way"].includes(o.status)).length,
       delivered: restaurantOrders.filter((o) => o.status === "delivered" || o.status === "completed").length,
       cancelled: restaurantOrders.filter((o) => o.status === "cancelled").length,
     };
@@ -3506,9 +3506,9 @@ export function createGatewayApp(): express.Express {
         restaurantOrders = restaurantOrders.filter((o) => o.status === "pending" || o.status === "placed");
       } else if (status === "ready") {
         restaurantOrders = restaurantOrders.filter((o) => o.status === "ready" || o.status === "ready_for_pickup");
-      } else if (status === "picked_up") {
-        restaurantOrders = restaurantOrders.filter((o) => o.status === "picked_up" || o.status === "in_transit");
-      } else if (status === "delivered") {
+      } else if (status === "picked_up" || status === "on_the_way") {
+        restaurantOrders = restaurantOrders.filter((o) => ["assigned", "arrived", "picked_up", "out_for_delivery", "in_transit", "delivering", "on_the_way"].includes(o.status));
+      } else if (status === "delivered" || status === "completed") {
         restaurantOrders = restaurantOrders.filter((o) => o.status === "delivered" || o.status === "completed");
       } else {
         restaurantOrders = restaurantOrders.filter((o) => o.status === status);
