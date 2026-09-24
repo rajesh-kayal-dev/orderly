@@ -2867,6 +2867,21 @@ export function createGatewayApp(): express.Express {
     existing.is_available = is_available !== undefined ? Boolean(is_available) : existing.is_available;
     existing.is_veg = is_veg !== undefined ? Boolean(is_veg) : existing.is_veg;
 
+    const io = getSocketIO();
+    if (io) {
+      io.emit("MENU_ITEM_UPDATED", {
+        itemId: existing.id,
+        id: existing.id,
+        restaurantId: existing.restaurant_id,
+        is_available: existing.is_available,
+        is_in_stock: existing.is_available,
+        name: existing.name,
+        price: existing.price,
+        image_url: existing.image,
+        description: existing.description,
+      });
+    }
+
     return void res.json({
       success: true,
       data: {
@@ -2883,6 +2898,22 @@ export function createGatewayApp(): express.Express {
       return void res.status(404).json({ success: false, message: "Menu item not found" });
     }
     existing.is_available = !existing.is_available;
+
+    const io = getSocketIO();
+    if (io) {
+      io.emit("MENU_ITEM_UPDATED", {
+        itemId: existing.id,
+        id: existing.id,
+        restaurantId: existing.restaurant_id,
+        is_available: existing.is_available,
+        is_in_stock: existing.is_available,
+        name: existing.name,
+        price: existing.price,
+        image_url: existing.image,
+        description: existing.description,
+      });
+    }
+
     return void res.json({ success: true, data: existing });
   });
 
@@ -3017,6 +3048,13 @@ export function createGatewayApp(): express.Express {
     }
 
     const item = menuItems.find((i) => i.id === menuItemId);
+    if (item && item.is_available === false) {
+      return void res.status(400).json({
+        success: false,
+        message: `"${item.name}" is currently out of stock and cannot be added to cart.`,
+      });
+    }
+
     const existing = carts[userId].items.find((i) => i.menuItemId === menuItemId);
 
     if (existing) {

@@ -92,16 +92,15 @@ export default function RestaurantMenu() {
     fetchMenuData();
 
     socket.on('MENU_ITEM_UPDATED', (data) => {
-      if (String(data.restaurantId) === String(restaurantId)) {
-        setMenu(prevMenu => prevMenu.map(category => ({
-          ...category,
-          items: (category.items || category.menuItems || [])?.map(item => 
-            String(item.id) === String(data.itemId) 
-              ? { ...item, ...data } 
-              : item
-          )
-        })));
-      }
+      if (!data) return;
+      setMenu(prevMenu => prevMenu.map(category => ({
+        ...category,
+        items: (category.items || category.menuItems || [])?.map(item => 
+          String(item.id) === String(data.itemId || data.id) || String(item.name).toLowerCase() === String(data.name).toLowerCase()
+            ? { ...item, ...data, is_available: data.is_available, is_in_stock: data.is_available } 
+            : item
+        )
+      })));
     });
 
     socket.on('RESTAURANT_STATUS_UPDATED', (data) => {
@@ -142,6 +141,16 @@ export default function RestaurantMenu() {
       notification.warning({
         message: 'Restaurant is closed',
         description: 'You cannot add items while this restaurant is closed.',
+        placement: 'topRight'
+      });
+      return;
+    }
+
+    const isAvailable = item.is_available !== false && item.is_in_stock !== false && item.in_stock !== false && item.status !== 'OUT_OF_STOCK' && item.status !== 'UNAVAILABLE';
+    if (!isAvailable) {
+      notification.warning({
+        message: 'Item Out of Stock',
+        description: `Sorry, "${item.name}" is currently out of stock.`,
         placement: 'topRight'
       });
       return;
@@ -392,31 +401,44 @@ export default function RestaurantMenu() {
                       const qty = getItemQuantity(item.id);
                       const isFav = favorites[item.id];
                       const isVeg = item.is_veg !== undefined ? item.is_veg : true;
+                      const isAvailable = item.is_available !== false && item.is_in_stock !== false && item.in_stock !== false && item.status !== 'OUT_OF_STOCK' && item.status !== 'UNAVAILABLE';
 
                       return (
                         <div
                           key={item.id}
-                          className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-xl transition-all duration-200 flex flex-col justify-between group"
+                          className={`bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-xl transition-all duration-200 flex flex-col justify-between group ${
+                            !isAvailable ? 'opacity-90 bg-slate-50/50' : ''
+                          }`}
                         >
                           {/* Top Image Container */}
                           <div className="relative h-36 sm:h-40 w-full overflow-hidden bg-slate-100">
                             <img
                               src={item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600'}
                               alt={item.name}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              className={`w-full h-full object-cover transition-transform duration-300 ${
+                                !isAvailable ? 'grayscale opacity-60' : 'group-hover:scale-105'
+                              }`}
                             />
 
-                            {/* Bestseller Badge */}
-                            {item.is_bestseller && (
-                              <span className="absolute top-2.5 left-2.5 bg-[#FF521C] text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md shadow-sm">
-                                Bestseller
-                              </span>
+                            {/* Out of Stock Overlay Badge */}
+                            {!isAvailable ? (
+                              <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center">
+                                <span className="bg-red-600/95 text-white text-[10.5px] font-black uppercase tracking-wider px-3 py-1 rounded-full shadow-lg border border-red-400/40">
+                                  Out of Stock
+                                </span>
+                              </div>
+                            ) : (
+                              item.is_bestseller && (
+                                <span className="absolute top-2.5 left-2.5 bg-[#FF521C] text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md shadow-sm">
+                                  Bestseller
+                                </span>
+                              )
                             )}
 
                             {/* Favorite Heart Toggle */}
                             <button
                               onClick={() => toggleFavorite(item.id)}
-                              className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full bg-black/40 text-white hover:bg-black/60 flex items-center justify-center shadow-xs transition-colors backdrop-blur-xs"
+                              className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full bg-black/40 text-white hover:bg-black/60 flex items-center justify-center shadow-xs transition-colors backdrop-blur-xs z-10"
                             >
                               {isFav ? <HeartFilled className="text-red-500 text-xs" /> : <HeartOutlined className="text-xs" />}
                             </button>
@@ -436,7 +458,9 @@ export default function RestaurantMenu() {
                                 </span>
                               </div>
 
-                              <h3 className="font-bold text-slate-900 text-sm leading-snug line-clamp-1 group-hover:text-orange-600 transition-colors">
+                              <h3 className={`font-bold text-sm leading-snug line-clamp-1 transition-colors ${
+                                !isAvailable ? 'text-slate-500' : 'text-slate-900 group-hover:text-orange-600'
+                              }`}>
                                 {item.name}
                               </h3>
 
@@ -447,11 +471,17 @@ export default function RestaurantMenu() {
 
                             {/* Price & Add Action Row */}
                             <div className="flex items-center justify-between pt-2 border-t border-slate-100 mt-auto">
-                              <span className="text-sm sm:text-base font-black text-slate-900">
+                              <span className={`text-sm sm:text-base font-black ${
+                                !isAvailable ? 'text-slate-400 line-through decoration-slate-300' : 'text-slate-900'
+                              }`}>
                                 ₹{item.price}
                               </span>
 
-                              {qty > 0 ? (
+                              {!isAvailable ? (
+                                <span className="px-3 py-1 rounded-xl bg-slate-100 border border-slate-200 text-slate-400 text-[11px] font-bold cursor-not-allowed select-none">
+                                  Out of Stock
+                                </span>
+                              ) : qty > 0 ? (
                                 <div className="flex items-center bg-slate-100 rounded-xl p-0.5 border border-slate-200">
                                   <button
                                     onClick={() => handleDecrease(item)}
