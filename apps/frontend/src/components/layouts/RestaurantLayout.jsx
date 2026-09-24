@@ -21,7 +21,11 @@ import {
   RightOutlined,
   CrownOutlined,
   DownOutlined,
-  ClockCircleOutlined
+  ClockCircleOutlined,
+  ShopOutlined,
+  MailOutlined,
+  PhoneOutlined,
+  EnvironmentOutlined
 } from '@ant-design/icons';
 
 export default function RestaurantLayout() {
@@ -233,9 +237,12 @@ export default function RestaurantLayout() {
     return 'Restaurant Dashboard';
   };
 
+  const accountName = user?.full_name || 'Restaurant Owner';
   const restaurantName = profile?.name || user?.restaurant_name || (user?.full_name ? `${user.full_name}'s Restaurant` : 'Restaurant');
-  const ownerName = user?.full_name || 'Owner';
-  const restaurantInitial = ((restaurantName || 'R').trim().split(/\s+/).map(n => n[0]).join('').slice(0, 2)).toUpperCase();
+  const emailId = user?.email || profile?.owner_email || 'restaurant@ofds.com';
+  const phoneNo = user?.phone_number || profile?.phone_number || '';
+  const addressText = profile?.address || '';
+  const accountInitial = ((accountName || 'RO').trim().split(/\s+/).map(n => n[0]).join('').slice(0, 2)).toUpperCase();
 
   return (
     <div className="flex h-screen bg-[#F8FAFC] overflow-hidden font-sans">
@@ -250,25 +257,59 @@ export default function RestaurantLayout() {
             <BrandLogo variant="orange" size="md" to="/restaurant" />
           </div>
 
-          {/* User Account Card */}
+          {/* User Account Card: Account Name, Restaurant Name, Email, Phone, Address */}
           <Link
             to="/restaurant/settings"
-            className="flex items-center justify-between p-2.5 mb-4 rounded-xl bg-[#1E293B]/80 hover:bg-[#1E293B] border border-white/5 transition-all group cursor-pointer"
+            className="block p-3 mb-4 rounded-2xl bg-[#1E293B]/90 hover:bg-[#1E293B] border border-white/10 hover:border-orange-500/40 transition-all group cursor-pointer shadow-md"
           >
-            <div className="flex items-center gap-2.5 overflow-hidden">
-              <div className="w-8 h-8 rounded-lg bg-orange-500/20 border border-orange-500/30 flex items-center justify-center font-bold text-xs text-orange-400 shrink-0 select-none">
-                {restaurantInitial}
+            {/* Header: User Avatar + Account Name + Role */}
+            <div className="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-white/5">
+              <div className="flex items-center gap-2.5 overflow-hidden">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center font-black text-xs text-white shadow-xs shrink-0 select-none tracking-wider">
+                  {accountInitial}
+                </div>
+                <div className="truncate">
+                  <p className="text-xs font-bold text-slate-100 truncate group-hover:text-orange-400 transition-colors">
+                    {accountName}
+                  </p>
+                  <p className="text-[10px] text-orange-400 font-semibold truncate flex items-center gap-1">
+                    <span>●</span> Restaurant Owner
+                  </p>
+                </div>
               </div>
-              <div className="truncate">
-                <p className="text-xs font-bold text-slate-100 truncate group-hover:text-orange-400 transition-colors" title={restaurantName}>
-                  {restaurantName}
-                </p>
-                <p className="text-[10px] text-slate-400 truncate font-medium">
-                  {ownerName} (Owner)
-                </p>
-              </div>
+              <RightOutlined className="text-[10px] text-slate-400 group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0" />
             </div>
-            <RightOutlined className="text-[10px] text-slate-400 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+
+            {/* Sub-details: Restaurant Name, Email, Phone, Address */}
+            <div className="space-y-1 text-[10.5px] text-slate-300 font-medium">
+              {/* Restaurant Name */}
+              <div className="flex items-center gap-1.5 text-slate-200 font-bold truncate">
+                <ShopOutlined className="text-orange-400 text-xs shrink-0" />
+                <span className="truncate" title={restaurantName}>{restaurantName}</span>
+              </div>
+
+              {/* Email */}
+              <div className="flex items-center gap-1.5 text-slate-400 truncate">
+                <MailOutlined className="text-slate-500 text-[10px] shrink-0" />
+                <span className="truncate text-[10px]" title={emailId}>{emailId}</span>
+              </div>
+
+              {/* Phone */}
+              {phoneNo && (
+                <div className="flex items-center gap-1.5 text-slate-400 truncate">
+                  <PhoneOutlined className="text-slate-500 text-[10px] shrink-0" />
+                  <span className="truncate text-[10px]">{phoneNo}</span>
+                </div>
+              )}
+
+              {/* Address */}
+              {addressText && (
+                <div className="flex items-center gap-1.5 text-slate-400 truncate">
+                  <EnvironmentOutlined className="text-slate-500 text-[10px] shrink-0" />
+                  <span className="truncate text-[10px]" title={addressText}>{addressText}</span>
+                </div>
+              )}
+            </div>
           </Link>
 
           {/* Navigation Links */}
