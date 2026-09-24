@@ -114,7 +114,7 @@ interface AuthUser {
   role: "customer" | "restaurant" | "delivery_partner" | "admin" | "customer_support";
   full_name: string;
   phone_number: string | null;
-  status: "active" | "pending" | "suspended" | "blocked" | "rejected" | "deleted";
+  status: "active" | "pending" | "suspended" | "blocked" | "rejected" | "deleted" | "PENDING_APPROVAL" | "ACTIVE" | string;
   is_active?: boolean;
   is_blocked?: boolean;
   deleted_at?: string | null;
@@ -240,12 +240,14 @@ async function syncFromDatabase() {
       const uRole = row.role?.toLowerCase() || "customer";
       const uName = row.fullName || row.full_name || "User";
       const uPhone = row.phoneNumber || row.phone_number || null;
-      const uStatus = (row.status === "ACTIVE" || row.is_active ? "active" : "suspended") as any;
+      const isApproved = (row.status === "ACTIVE" || row.status === "active" || row.status === "VERIFIED") && row.is_active === true;
+      const uStatus = isApproved ? "active" : (row.status || (row.is_active ? "active" : "PENDING_APPROVAL"));
 
       if (existing) {
         existing.full_name = uName;
         existing.phone_number = uPhone;
-        existing.status = uStatus;
+        existing.status = uStatus as any;
+        existing.is_active = isApproved;
         if (row.email) existing.email = row.email;
       } else {
         const newUserObj: AuthUser = {
@@ -254,7 +256,7 @@ async function syncFromDatabase() {
           role: uRole as any,
           full_name: uName,
           phone_number: uPhone,
-          status: uStatus,
+          status: uStatus as any,
           created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
         };
         users.push(newUserObj);
@@ -278,6 +280,7 @@ async function syncFromDatabase() {
             u.id === row.id.replace(/^rest-/, "") ||
             `rest-${u.id}` === row.id
         );
+        const isApproved = row.is_active === true && (row.status === "ACTIVE" || !row.status);
         const restObj: RestaurantRecord = {
           id: row.id,
           owner_id: row.user_id,
@@ -292,13 +295,13 @@ async function syncFromDatabase() {
           rating: row.rating ? Number(row.rating) : 4.9,
           image: row.image_url || "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=60",
           image_url: row.image_url || "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=60",
-          is_active: row.is_active ?? true,
-          is_accepting_orders: true,
+          is_active: isApproved,
+          is_accepting_orders: isApproved,
           delivery_time: "20-30 mins",
           price_for_two: 450,
           opens_at: row.opens_at || "10:00 AM",
           closes_at: row.closes_at || "11:00 PM",
-          status: (row.status as any) || (row.is_active ? "ACTIVE" : "SUSPENDED"),
+          status: (row.status as any) || (isApproved ? "ACTIVE" : "PENDING_APPROVAL"),
           deleted_at: row.deleted_at || null,
           created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
           updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
@@ -322,6 +325,7 @@ async function syncFromDatabase() {
           const restName = u.full_name && (u.full_name.toLowerCase().includes("restaurant") || u.full_name.toLowerCase().includes("kitchen") || u.full_name.toLowerCase().includes("cafe"))
             ? u.full_name
             : `${u.full_name || "New"}'s Restaurant`;
+          const isApproved = u.status === "active" || (u as any).status === "ACTIVE";
           restaurants.push({
             id: `rest-${u.id}`,
             name: restName,
@@ -332,8 +336,8 @@ async function syncFromDatabase() {
             rating: 4.8,
             image: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=60",
             image_url: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=60",
-            is_active: true,
-            is_accepting_orders: true,
+            is_active: isApproved,
+            is_accepting_orders: isApproved,
             delivery_time: "20-30 mins",
             price_for_two: 450,
             opens_at: "10:00 AM",
@@ -344,7 +348,7 @@ async function syncFromDatabase() {
             owner_email: u.email,
             created_at: u.created_at || new Date().toISOString(),
             updated_at: u.created_at || new Date().toISOString(),
-            status: "ACTIVE",
+            status: isApproved ? "ACTIVE" : "PENDING_APPROVAL",
           });
         }
       }
@@ -423,7 +427,7 @@ interface RestaurantRecord {
   user_id?: string | null | undefined;
   owner_name?: string | null | undefined;
   owner_email?: string | null | undefined;
-  status?: "ACTIVE" | "SUSPENDED" | "BLOCKED" | "DELETED" | undefined;
+  status?: "ACTIVE" | "PENDING_APPROVAL" | "SUSPENDED" | "BLOCKED" | "DELETED" | string | undefined;
   deleted_at?: string | null | undefined;
   created_at?: string | undefined;
   updated_at?: string | undefined;
@@ -1245,13 +1249,13 @@ export function createGatewayApp(): express.Express {
         rating: 4.9,
         image: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=60",
         image_url: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=60",
-        is_active: true,
-        is_accepting_orders: true,
+        is_active: false,
+        is_accepting_orders: false,
         delivery_time: "20-30 mins",
         price_for_two: 450,
         opens_at: "10:00 AM",
         closes_at: "11:00 PM",
-        status: "ACTIVE",
+        status: "PENDING_APPROVAL",
         created_at: newUser.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -1272,13 +1276,14 @@ export function createGatewayApp(): express.Express {
       // Save to Neon PostgreSQL Restaurant table
       try {
         await dbPool.query(
-          `INSERT INTO "Restaurant" (id, user_id, name, description, address, image_url, rating, is_active, opens_at, closes_at, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, true, '10:00 AM', '11:00 PM', NOW(), NOW())
+          `INSERT INTO "Restaurant" (id, user_id, name, description, address, image_url, rating, is_active, status, opens_at, closes_at, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, false, 'PENDING_APPROVAL', '10:00 AM', '11:00 PM', NOW(), NOW())
            ON CONFLICT (id) DO UPDATE SET
              name = EXCLUDED.name,
              address = EXCLUDED.address,
              description = EXCLUDED.description,
-             is_active = true,
+             is_active = false,
+             status = 'PENDING_APPROVAL',
              updated_at = NOW();`,
           [
             `rest-${newUser.id}`,
@@ -1301,8 +1306,8 @@ export function createGatewayApp(): express.Express {
         type: "Restaurant",
         role: "restaurant",
         link: "/admin/restaurants",
-        title: `New restaurant "${restName}" registered`,
-        message: `Restaurant "${restName}" has registered and is active on the platform.`,
+        title: `New restaurant "${restName}" registered (Pending Approval)`,
+        message: `Restaurant "${restName}" has registered and is awaiting admin verification.`,
         read: false,
         createdAt: new Date().toISOString(),
       };
@@ -1316,8 +1321,8 @@ export function createGatewayApp(): express.Express {
           email: lowerEmail,
           phone: restPhone,
           address: restAddress,
-          status: "ACTIVE",
-          is_active: true,
+          status: "PENDING_APPROVAL",
+          is_active: false,
           created_at: newRest.created_at,
         };
         io.to("role_admin").emit("PARTNER_REGISTERED", {
@@ -2315,15 +2320,81 @@ export function createGatewayApp(): express.Express {
     };
   }
 
-  app.get(["/restaurants", "/customer/restaurants"], (_req, res) => {
+  app.get(["/restaurants", "/customer/restaurants"], async (_req, res) => {
     ensureRestaurantUserRecords();
-    const approvedRestaurants = restaurants.filter((r) => {
-      const owner = users.find((u) => u.id === r.owner_id || u.id === r.user_id);
-      if (owner && (owner.status === "pending" || (owner as any).is_active === false)) {
-        return false;
+
+    // 1. Fetch latest restaurants from DB
+    try {
+      const resRests = await dbPool.query(
+        `SELECT id, user_id, name, description, address, image_url, rating, is_active, opens_at, closes_at, created_at, updated_at, status, deleted_at FROM "Restaurant" WHERE (deleted_at IS NULL) ORDER BY created_at DESC;`
+      );
+      for (const row of resRests.rows) {
+        const existIdx = restaurants.findIndex(
+          (r) => r.id === row.id || (row.user_id && (r.owner_id === row.user_id || r.user_id === row.user_id))
+        );
+        const ownerUser = users.find(
+          (u) =>
+            u.id === row.user_id ||
+            u.id === row.id ||
+            u.id === row.id.replace(/^rest-/, "") ||
+            `rest-${u.id}` === row.id
+        );
+        const isApproved = row.is_active === true && (row.status === "ACTIVE" || !row.status);
+        const restObj: RestaurantRecord = {
+          id: row.id,
+          owner_id: row.user_id,
+          user_id: row.user_id,
+          owner_name: ownerUser?.full_name || undefined,
+          owner_email: ownerUser?.email || undefined,
+          name: row.name,
+          description: row.description || "Fresh handcrafted gourmet meals, specials, and local favorites.",
+          address: row.address || "100 Food Street, City Center",
+          phone_number: ownerUser?.phone_number || "+91 9834567890",
+          cuisine: ["Burgers", "Fast Food", "Continental"],
+          rating: row.rating ? Number(row.rating) : 4.9,
+          image: row.image_url || "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=60",
+          image_url: row.image_url || "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=60",
+          is_active: isApproved,
+          is_accepting_orders: isApproved,
+          delivery_time: "20-30 mins",
+          price_for_two: 450,
+          opens_at: row.opens_at || "10:00 AM",
+          closes_at: row.closes_at || "11:00 PM",
+          status: (row.status as any) || (isApproved ? "ACTIVE" : "PENDING_APPROVAL"),
+          deleted_at: row.deleted_at || null,
+          created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+          updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
+        };
+        if (existIdx >= 0) {
+          restaurants[existIdx] = { ...restaurants[existIdx], ...restObj };
+        } else {
+          restaurants.push(restObj);
+        }
       }
-      return r.is_active !== false;
+    } catch (dbErr: any) {
+      console.warn("[Customer Restaurants DB sync notice]:", dbErr.message);
+    }
+
+    // 2. Filter ONLY APPROVED restaurants (status === 'ACTIVE' & is_active === true)
+    const approvedRestaurants = restaurants.filter((r) => {
+      if (r.deleted_at || r.status === "DELETED") return false;
+      if (r.status === "BLOCKED" || r.status === "SUSPENDED") return false;
+      if (r.status === "PENDING_APPROVAL" || r.status === "pending" || r.status === "PENDING") return false;
+      if (r.is_active === false) return false;
+
+      const owner = users.find((u) => u.id === r.owner_id || u.id === r.user_id);
+      if (owner) {
+        const ownerStatus = (owner.status || "").toLowerCase();
+        if (ownerStatus === "pending" || ownerStatus === "pending_approval" || ownerStatus === "blocked" || ownerStatus === "suspended" || (owner as any).is_active === false) {
+          return false;
+        }
+      }
+      return true;
     });
+
+    // 3. Sort descending by created_at (newest approved restaurant on top)
+    approvedRestaurants.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
     const formattedList = approvedRestaurants.map(formatRestaurantOutput);
     return void res.json({ success: true, data: formattedList, total: formattedList.length });
   });
@@ -2801,17 +2872,51 @@ export function createGatewayApp(): express.Express {
   });
 
   app.get(["/auth/approved-partners", "/delivery-partners", "/delivery-partners/public"], async (_req, res) => {
-    // 1. Collect all approved driver accounts from users collection & DB
+    // 1. Sync latest driver statuses from PostgreSQL DB
+    try {
+      const resDrivers = await dbPool.query(
+        `SELECT id, email, role, full_name, "fullName", phone_number, "phoneNumber", status, is_active, is_blocked, created_at FROM "User" WHERE LOWER(role) IN ('delivery_partner', 'driver') ORDER BY created_at DESC;`
+      );
+      for (const row of resDrivers.rows) {
+        const existing = users.find((u) => u.id === row.id || (row.email && u.email.toLowerCase() === row.email.toLowerCase()));
+        const isApproved = (row.status === "ACTIVE" || row.status === "active" || row.status === "VERIFIED") && row.is_active === true && !row.is_blocked;
+        const statusVal = isApproved ? "active" : (row.status || "PENDING_APPROVAL");
+        if (existing) {
+          existing.status = statusVal as any;
+          existing.is_active = isApproved;
+          (existing as any).is_blocked = Boolean(row.is_blocked);
+        }
+        const dp = deliveryPartners.find((d) => d.userId === row.id || d.id === `dp-${row.id}`);
+        if (dp) {
+          dp.status = isApproved ? "ACTIVE" : (row.status || "PENDING_APPROVAL");
+          dp.is_active = isApproved;
+          if (!isApproved) {
+            dp.is_available = false;
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn("[Approved Partners DB sync notice]:", e.message);
+    }
+
+    // 2. Only collect strictly approved driver accounts
     const approvedDrivers = users.filter((u) =>
       (u.role === "delivery_partner" || (u.role as any) === "driver") &&
-      (u.status === "active" || (u as any).status === "ACTIVE" || (u as any).is_active === true || (u as any).status === "VERIFIED" || (u as any).status === "verified")
+      (u.status === "active" || (u as any).status === "ACTIVE" || (u as any).status === "VERIFIED" || (u as any).status === "verified") &&
+      (u as any).is_active === true &&
+      !(u as any).is_blocked &&
+      u.status !== "PENDING_APPROVAL" &&
+      u.status !== "pending"
     );
 
     const partnerMap = new Map<string, any>();
 
-    // Add baseline seeded partners
+    // 3. Add baseline seeded partners ONLY if approved
     for (const p of deliveryPartners) {
-      const isOnline = p.is_available ?? true;
+      if (p.status === "PENDING_APPROVAL" || p.status === "pending" || p.is_active === false) {
+        continue;
+      }
+      const isOnline = p.is_available ?? false;
       partnerMap.set(p.userId || p.id, {
         id: p.id,
         userId: p.userId || p.id,
@@ -2837,7 +2942,7 @@ export function createGatewayApp(): express.Express {
       });
     }
 
-    // Merge in all approved delivery partner accounts
+    // 4. Merge in strictly approved delivery partner accounts
     const avatars = [
       "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60",
       "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=60",
@@ -2848,11 +2953,11 @@ export function createGatewayApp(): express.Express {
 
     approvedDrivers.forEach((u, i) => {
       const existing = partnerMap.get(u.id);
-      const isOnline = existing ? (existing.is_available ?? true) : true;
+      const isOnline = existing ? (existing.is_available ?? false) : false;
       const avatarUrl = existing?.avatar || avatars[i % avatars.length];
 
       partnerMap.set(u.id, {
-        id: existing?.id || u.id,
+        id: existing?.id || `dp-${u.id}`,
         userId: u.id,
         name: u.full_name,
         fullName: u.full_name,
@@ -4521,11 +4626,22 @@ export function createGatewayApp(): express.Express {
         .reduce((sum, o) => sum + (o.total || 0), 0);
       const activeMenuItems = menuItems.filter((m) => m.restaurant_id === r.id && m.is_available).length;
 
-      let computedStatus: "ACTIVE" | "SUSPENDED" | "BLOCKED" | "DELETED" = "ACTIVE";
+      let computedStatus: "ACTIVE" | "SUSPENDED" | "BLOCKED" | "DELETED" | "PENDING_APPROVAL" = "ACTIVE";
       if (r.deleted_at || r.status === "DELETED") computedStatus = "DELETED";
       else if (r.status === "BLOCKED" || owner?.status === "blocked") computedStatus = "BLOCKED";
-      else if (r.status === "SUSPENDED" || owner?.status === "suspended" || r.is_active === false) computedStatus = "SUSPENDED";
-      else computedStatus = "ACTIVE";
+      else if (
+        r.status === "PENDING_APPROVAL" ||
+        r.status === "pending" ||
+        owner?.status === "pending" ||
+        owner?.status === "PENDING_APPROVAL" ||
+        ((owner as any)?.is_active === false && owner?.status !== "suspended" && owner?.status !== "blocked")
+      ) {
+        computedStatus = "PENDING_APPROVAL";
+      } else if (r.status === "SUSPENDED" || owner?.status === "suspended" || r.is_active === false) {
+        computedStatus = "SUSPENDED";
+      } else {
+        computedStatus = "ACTIVE";
+      }
 
       const ownerName = owner?.full_name || r.owner_name || (owner as any)?.name || "Restaurant Partner";
       const ownerEmail = owner?.email || r.owner_email || "";
@@ -4542,8 +4658,8 @@ export function createGatewayApp(): express.Express {
         rating: r.rating || 4.8,
         image: r.image || r.image_url,
         image_url: r.image_url || r.image,
-        is_active: r.is_active ?? true,
-        is_accepting_orders: r.is_accepting_orders ?? true,
+        is_active: computedStatus === "ACTIVE",
+        is_accepting_orders: computedStatus === "ACTIVE",
         status: computedStatus,
         deleted_at: r.deleted_at || null,
         created_at: createdAt,
