@@ -29,7 +29,7 @@ const RevenueTooltip = ({ active, payload, label }) => {
     return (
       <div className="bg-white border border-gray-100 rounded-2xl shadow-soft px-4 py-3 text-sm">
         <p className="font-bold text-gray-500 mb-1">{label}</p>
-        <p className="text-primary font-black">{Number(payload[0].value).toLocaleString()}đ</p>
+        <p className="text-primary font-black">₹{Number(payload[0].value).toLocaleString('en-IN')}</p>
       </div>
     );
   }
@@ -85,7 +85,7 @@ export default function RestaurantSummary() {
     ? [
         {
           label: 'Total Revenue',
-          value: `${Number(data.stats.totalRevenue).toLocaleString()}đ`,
+          value: `₹${Number(data.stats.totalRevenue).toLocaleString('en-IN')}`,
           icon: <DollarOutlined className="text-2xl" />,
           border: 'border-primary',
           iconBg: 'bg-orange-100 text-primary',
@@ -99,7 +99,7 @@ export default function RestaurantSummary() {
         },
         {
           label: 'Avg Order Value',
-          value: `${Math.round(data.stats.avgOrderValue).toLocaleString()}đ`,
+          value: `₹${Math.round(data.stats.avgOrderValue).toLocaleString('en-IN')}`,
           icon: <BarChartOutlined className="text-2xl" />,
           border: 'border-accent',
           iconBg: 'bg-yellow-100 text-yellow-600',
@@ -119,14 +119,14 @@ export default function RestaurantSummary() {
     lines.push(row(['Restaurant', profile?.name || '']));
     lines.push(row([]));
     lines.push(row(['Metric', 'Value']));
-    lines.push(row(['Total Revenue (VND)', data.stats.totalRevenue]));
+    lines.push(row(['Total Revenue (INR)', data.stats.totalRevenue]));
     lines.push(row(['Total Orders', data.stats.totalOrders]));
-    lines.push(row(['Avg Order Value (VND)', Math.round(data.stats.avgOrderValue)]));
+    lines.push(row(['Avg Order Value (INR)', Math.round(data.stats.avgOrderValue)]));
     lines.push(row([]));
 
     // --- Section 2: Monthly Revenue ---
     lines.push(row(['MONTHLY REVENUE']));
-    lines.push(row(['Month', 'Revenue (VND)', 'Orders']));
+    lines.push(row(['Month', 'Revenue (INR)', 'Orders']));
     data.monthlyRevenue.forEach(m => lines.push(row([m.month, m.revenue])));
     lines.push(row([]));
 
@@ -142,7 +142,7 @@ export default function RestaurantSummary() {
       : data.recentOrders.filter(o => new Date(o.createdAt).getMonth() === Number(monthFilter));
     const monthLabel = monthFilter === 'all' ? 'All Months' : MONTHS[Number(monthFilter)];
     lines.push(row([`ORDERS (${monthLabel})`]));
-    lines.push(row(['Order ID', 'Customer', 'Subtotal (VND)', 'Date', 'Status']));
+    lines.push(row(['Order ID', 'Customer', 'Subtotal (INR)', 'Date', 'Status']));
     filteredOrders.forEach(o => lines.push(row([
       o.id,
       o.customerName,
@@ -462,7 +462,7 @@ export default function RestaurantSummary() {
                         <tr key={order.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                           <td className="py-3.5 pr-4 font-mono text-xs text-gray-400">#{order.id.slice(0, 8)}</td>
                           <td className="py-3.5 pr-4 font-semibold text-gray-700 text-sm">{order.customerName}</td>
-                          <td className="py-3.5 pr-4 font-bold text-gray-800 text-sm tabular-nums">{Number(order.subtotal).toLocaleString()}đ</td>
+                          <td className="py-3.5 pr-4 font-bold text-gray-800 text-sm tabular-nums">₹{Number(order.subtotal).toLocaleString('en-IN')}</td>
                           <td className="py-3.5 pr-4 text-gray-500 text-sm">
                             {new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
                           </td>

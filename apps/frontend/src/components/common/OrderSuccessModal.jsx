@@ -38,19 +38,25 @@ export default function OrderSuccessModal({ order, onClose }) {
     }
   ];
 
-  // Dynamic calculations
-  const subtotal = order.subtotal !== undefined
-    ? order.subtotal
-    : itemsList.reduce((s, i) => s + (Number(i.unit_price || i.price || 0) * i.quantity), 0);
+  // Dynamic calculations from authoritative order data
+  const subtotal = Number(
+    order.subtotal ?? 
+    itemsList.reduce((s, i) => s + (Number(i.unit_price || i.price || 0) * i.quantity), 0)
+  );
 
-  const discountAmount = order.discountAmount || 0;
-  const deliveryFee = order.deliveryFee !== undefined ? order.deliveryFee : 30.00;
-  const platformFee = order.platformFee !== undefined ? order.platformFee : 5.00;
-  const gst = order.gst !== undefined ? order.gst : (Math.max(0, subtotal - discountAmount) * 0.05);
+  const discountAmount = Number(order.discount_amount ?? order.discountAmount ?? order.discount ?? 0);
+  const deliveryFee = Number(order.delivery_fee ?? order.deliveryFee ?? (subtotal > 0 ? 30.00 : 0));
+  const platformFee = Number(order.platform_fee ?? order.platformFee ?? (subtotal > 0 ? 5.00 : 0));
+  const gst = Number(order.tax ?? order.gst ?? (Math.max(0, subtotal - discountAmount) * 0.05));
   
-  const grandTotal = order.grandTotal !== undefined
-    ? order.grandTotal
-    : (order.total_amount || order.total || Math.max(0, subtotal - discountAmount + deliveryFee + platformFee + gst));
+  const grandTotal = Number(
+    order.total ?? 
+    order.total_amount ?? 
+    order.grandTotal ?? 
+    Math.max(0, subtotal - discountAmount + deliveryFee + platformFee + gst)
+  );
+
+  const couponCode = order.coupon_code || order.couponCode || order.appliedCoupon?.code || 'FLAT50';
 
   // Date formatting
   const placedAt = order.created_at || order.createdAt
@@ -206,7 +212,7 @@ export default function OrderSuccessModal({ order, onClose }) {
 
               {discountAmount > 0 && (
                 <div className="flex justify-between text-emerald-600 font-bold">
-                  <span>Promo Discount ({order.appliedCoupon?.code || 'WELCOME50'})</span>
+                  <span>Promo Discount ({couponCode})</span>
                   <span>-₹{Number(discountAmount).toFixed(2)}</span>
                 </div>
               )}

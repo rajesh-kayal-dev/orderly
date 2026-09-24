@@ -34,22 +34,14 @@ export function createTokenVerifier(publicKey: string): TokenVerifier {
   };
 }
 
+import { DEV_DEFAULT_PUBLIC_KEY } from "@orderly/utils";
+
 let defaultVerifier: TokenVerifier | undefined;
 
 export function getTokenVerifier(): TokenVerifier {
   if (!defaultVerifier) {
-    defaultVerifier = createTokenVerifier(requireEnv("JWT_PUBLIC_KEY"));
+    defaultVerifier = createTokenVerifier(process.env.JWT_PUBLIC_KEY || DEV_DEFAULT_PUBLIC_KEY);
   }
 
   return defaultVerifier;
-}
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-
-  if (!value) {
-    throw new Error(`${name} is not configured`);
-  }
-
-  return value;
 }

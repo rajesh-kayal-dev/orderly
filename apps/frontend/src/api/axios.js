@@ -9,7 +9,7 @@ const getBaseUrl = () => {
       window.location.hostname.includes('webcontainer') ||
       window.location.hostname.includes('ais-');
 
-    if (isCloudPreview || window.location.port === '3000') {
+    if (isCloudPreview || window.location.port === '3000' || window.location.port === '3001') {
       return '/api';
     }
   }
@@ -24,8 +24,12 @@ const axiosInstance = axios.create({
 // Add a request interceptor to include the auth token or guest token
 axiosInstance.interceptors.request.use(
   (config) => {
-    const userToken = sessionStorage.getItem('token');
-    const guestToken = sessionStorage.getItem('guest_token') || localStorage.getItem('guest_token');
+    const userToken = typeof window !== 'undefined'
+      ? (localStorage.getItem('token') || sessionStorage.getItem('token'))
+      : null;
+    const guestToken = typeof window !== 'undefined'
+      ? (localStorage.getItem('guest_token') || sessionStorage.getItem('guest_token'))
+      : null;
     const effectiveToken = userToken || guestToken;
 
     if (effectiveToken) {
@@ -41,12 +45,25 @@ axiosInstance.interceptors.request.use(
   }
 );
 
-// Add a response interceptor for better error tracking
+// Add a response interceptor for better error tracking & session cleanup
 axiosInstance.interceptors.response.use(
   (response) => {
     return response;
   },
   (error) => {
+    if (error.response?.status === 401 && typeof window !== 'undefined') {
+      // If token expired or was rejected, ensure stale storage is cleaned
+      const hadToken = Boolean(localStorage.getItem('token') || sessionStorage.getItem('token'));
+      if (hadToken && error.config?.url && !error.config.url.includes('/auth/login')) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('profile');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
+        sessionStorage.removeItem('profile');
+      }
+    }
+
     console.error('API Error:', {
       url: error.config?.url,
       method: error.config?.method,

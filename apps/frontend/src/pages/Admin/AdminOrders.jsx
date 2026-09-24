@@ -349,7 +349,7 @@ export default function AdminOrders() {
 
                     <td className="p-8">
                       <div className="text-base font-black text-gray-900 tracking-tighter">
-                        {Number(order.total_amount || 0).toLocaleString()}đ
+                        ₹{Number(order.total ?? order.total_amount ?? 0).toFixed(2)}
                       </div>
                       <div className="text-[9px] text-gray-400 uppercase font-bold tracking-[0.15em] mt-1">
                         Pay via: <span className="text-primary">{order.payment_method}</span>
@@ -646,20 +646,34 @@ export default function AdminOrders() {
                 </div>
                 
                 <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     <div className="flex justify-between items-center text-gray-400">
                       <span className="text-xs font-bold uppercase tracking-widest">Cart Subtotal</span>
-                      <span className="font-mono">{Number(selectedOrder.subtotal).toLocaleString()}đ</span>
+                      <span className="font-mono">₹{Number(selectedOrder.subtotal || 0).toFixed(2)}</span>
                     </div>
+                    {Number(selectedOrder.discount_amount || selectedOrder.discountAmount || 0) > 0 && (
+                      <div className="flex justify-between items-center text-emerald-400">
+                        <span className="text-xs font-bold uppercase tracking-widest">Promo Discount ({selectedOrder.coupon_code || 'COUPON'})</span>
+                        <span className="font-mono">-₹{Number(selectedOrder.discount_amount || selectedOrder.discountAmount).toFixed(2)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center text-gray-400">
                       <span className="text-xs font-bold uppercase tracking-widest">Delivery Fee</span>
-                      <span className="font-mono">{Number(selectedOrder.delivery_fee).toLocaleString()}đ</span>
+                      <span className="font-mono">₹{Number(selectedOrder.delivery_fee ?? 30).toFixed(2)}</span>
                     </div>
-                    <div className="h-px bg-white/10 my-4"></div>
+                    <div className="flex justify-between items-center text-gray-400">
+                      <span className="text-xs font-bold uppercase tracking-widest">Platform Fee</span>
+                      <span className="font-mono">₹{Number(selectedOrder.platform_fee ?? 5).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-400">
+                      <span className="text-xs font-bold uppercase tracking-widest">GST (5%)</span>
+                      <span className="font-mono">₹{Number(selectedOrder.tax ?? 0).toFixed(2)}</span>
+                    </div>
+                    <div className="h-px bg-white/10 my-3"></div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm font-black uppercase tracking-widest text-primary">Master Total</span>
                       <span className="text-2xl font-black tracking-tighter text-white">
-                        {Number(selectedOrder.total_amount).toLocaleString()}đ
+                        ₹{Number(selectedOrder.total ?? selectedOrder.total_amount ?? 0).toFixed(2)}
                       </span>
                     </div>
                   </div>

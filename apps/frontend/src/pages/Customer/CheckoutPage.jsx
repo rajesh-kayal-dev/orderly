@@ -51,6 +51,7 @@ export default function CheckoutPage() {
   const [email, setEmail] = useState(user?.email || '');
   const [notes, setNotes] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('razorpay');
+  const [paymentError, setPaymentError] = useState('');
   const [successOrder, setSuccessOrder] = useState(null);
 
   // Helper to ensure an active guest session exists if user is guest
@@ -146,13 +147,24 @@ export default function CheckoutPage() {
         setAddress(addr.street || addr.address_line1 || '');
         setSelectedAddressId(addr.id || '');
       } else if (!address) {
-        setAddress('Default Delivery Location, Main Street');
+        setAddress('Flat 402, Lotus Tower, Vijay Nagar, Indore, MP - 452010');
         setSelectedAddressId('default-loc-id');
       }
 
       setFullName(user?.full_name || profile?.full_name || 'Valued Customer');
-      setPhone(user?.phone_number || profile?.phone_number || '');
+      setPhone(prevPhone => prevPhone || user?.phone_number || profile?.phone_number || '9876543210');
       setEmail(user?.email || '');
+    } else {
+      if (!address) {
+        setAddress('Flat 402, Lotus Tower, Vijay Nagar, Indore, MP - 452010');
+        setSelectedAddressId('default-loc-id');
+      }
+      if (!phone) {
+        setPhone('9876543210');
+      }
+      if (!fullName) {
+        setFullName('Valued Guest');
+      }
     }
   }, [profile, user, isGuest]);
 
@@ -247,6 +259,7 @@ export default function CheckoutPage() {
 
     try {
       setLoading(true);
+      setPaymentError('');
       await ensureGuestSession();
 
       if (paymentMethod === 'razorpay') {
@@ -276,9 +289,11 @@ export default function CheckoutPage() {
           onOk: () => { dispatch(fetchCart()); handlePlaceOrder(); }
         });
       } else {
+        const errorMsg = error.message || error.response?.data?.message || 'Payment could not be completed.';
+        setPaymentError(errorMsg);
         notification.error({
-          message: 'Checkout Error',
-          description: error.response?.data?.message || 'Something went wrong. Please try again.',
+          message: 'Payment Unsuccessful',
+          description: `${errorMsg} You can select another payment method like Cash on Delivery below.`,
           placement: 'topRight'
         });
       }
@@ -308,6 +323,8 @@ export default function CheckoutPage() {
       payment_method: 'cod',
       notes: notes || 'No notes provided',
       idempotency_key: idempotencyKey,
+      coupon_code: appliedCoupon?.code || null,
+      couponCode: appliedCoupon?.code || null,
       items: items.map(i => ({ menu_item_id: i.id, menuItemId: i.id, quantity: i.quantity, price: i.price, restaurant_id: i.restaurant_id || 1 }))
     };
 
@@ -323,12 +340,12 @@ export default function CheckoutPage() {
           ? createdOrder.OrderItems
           : cartSnapshotItems;
       createdOrder.appliedCoupon = appliedCoupon;
-      createdOrder.subtotal = subtotal;
-      createdOrder.discountAmount = discountAmount;
-      createdOrder.deliveryFee = deliveryFee;
-      createdOrder.platformFee = platformFee;
-      createdOrder.gst = gst;
-      createdOrder.grandTotal = grandTotal;
+      createdOrder.subtotal = createdOrder.subtotal !== undefined ? createdOrder.subtotal : subtotal;
+      createdOrder.discountAmount = createdOrder.discount_amount !== undefined ? createdOrder.discount_amount : discountAmount;
+      createdOrder.deliveryFee = createdOrder.delivery_fee !== undefined ? createdOrder.delivery_fee : deliveryFee;
+      createdOrder.platformFee = createdOrder.platform_fee !== undefined ? createdOrder.platform_fee : platformFee;
+      createdOrder.gst = createdOrder.tax !== undefined ? createdOrder.tax : gst;
+      createdOrder.grandTotal = createdOrder.total !== undefined ? createdOrder.total : grandTotal;
 
       sessionStorage.setItem('last_guest_order_id', createdOrder.id);
       setSuccessOrder(createdOrder);
@@ -359,6 +376,8 @@ export default function CheckoutPage() {
       payment_method: 'vnpay',
       notes: notes || 'No notes provided',
       idempotency_key: idempotencyKey,
+      coupon_code: appliedCoupon?.code || null,
+      couponCode: appliedCoupon?.code || null,
       items: items.map(i => ({ menu_item_id: i.id, menuItemId: i.id, quantity: i.quantity, price: i.price, restaurant_id: i.restaurant_id || 1 }))
     };
 
@@ -371,7 +390,7 @@ export default function CheckoutPage() {
     try {
       const vnpayRes = await axios.post('/payments/vnpay/create-url', {
         orderId: createdOrder.id,
-        amount: grandTotal,
+        amount: createdOrder.total || grandTotal,
         returnUrl: `${window.location.origin}/customer/orders`
       });
 
@@ -383,6 +402,14 @@ export default function CheckoutPage() {
         });
 
         createdOrder.items = cartSnapshotItems;
+        createdOrder.appliedCoupon = appliedCoupon;
+        createdOrder.subtotal = createdOrder.subtotal !== undefined ? createdOrder.subtotal : subtotal;
+        createdOrder.discountAmount = createdOrder.discount_amount !== undefined ? createdOrder.discount_amount : discountAmount;
+        createdOrder.deliveryFee = createdOrder.delivery_fee !== undefined ? createdOrder.delivery_fee : deliveryFee;
+        createdOrder.platformFee = createdOrder.platform_fee !== undefined ? createdOrder.platform_fee : platformFee;
+        createdOrder.gst = createdOrder.tax !== undefined ? createdOrder.tax : gst;
+        createdOrder.grandTotal = createdOrder.total !== undefined ? createdOrder.total : grandTotal;
+
         sessionStorage.setItem('last_guest_order_id', createdOrder.id);
         setSuccessOrder(createdOrder);
         sessionStorage.removeItem('orderly_applied_coupon');
@@ -394,14 +421,9 @@ export default function CheckoutPage() {
         return;
       }
     } catch (vnpErr) {
-      console.warn('VNPay payment initiation notice:', vnpErr);
+      await axios.post('/payments/failure', { orderId: createdOrder.id, reason: 'VNPay initiation failed' }).catch(() => {});
+      throw new Error('VNPay payment initiation could not be completed');
     }
-
-    createdOrder.items = cartSnapshotItems;
-    sessionStorage.setItem('last_guest_order_id', createdOrder.id);
-    setSuccessOrder(createdOrder);
-    sessionStorage.removeItem('orderly_applied_coupon');
-    await dispatch(clearCartAsync());
   };
 
   const loadRazorpaySDK = () => {
@@ -443,11 +465,14 @@ export default function CheckoutPage() {
         email: email || null,
       },
       phone_number: phone,
-      payment_method: 'online',
+      payment_method: 'razorpay',
       notes: notes || 'No notes provided',
       idempotency_key: idempotencyKey,
+      coupon_code: appliedCoupon?.code || null,
+      couponCode: appliedCoupon?.code || null,
       items: items.map(i => ({ menu_item_id: i.id, menuItemId: i.id, quantity: i.quantity, price: i.price, restaurant_id: i.restaurant_id || 1 }))
     };
+
     const orderRes = await axios.post('/orders', orderData, {
       headers: { 'x-idempotency-key': idempotencyKey }
     });
@@ -462,27 +487,37 @@ export default function CheckoutPage() {
     const { razorpayOrderId, amount, currency, keyId } = paymentRes.data.data;
 
     await new Promise((resolve, reject) => {
+      const logoUrl =
+        typeof window !== 'undefined'
+          ? `${window.location.origin}/orderly-logo.png`
+          : '/orderly-logo.png';
+
       const options = {
         key: keyId,
         amount,
         currency,
         name: 'Orderly',
         description: `Order #ORD${createdOrder.id.slice(0, 8).toUpperCase()}`,
-        image: '/logo.svg',
+        image: logoUrl,
         order_id: razorpayOrderId,
         prefill: {
           name: fullName || user?.full_name || 'Customer',
-          email: email,
-          contact: phone
+          email: email || user?.email || 'customer@orderly.com',
+          contact: phone || user?.phone_number || '9876543210'
         },
         theme: {
           color: '#F97316'
         },
         modal: {
-          ondismiss: () => {
+          ondismiss: async () => {
+            await axios.post('/payments/failure', {
+              orderId: createdOrder.id,
+              reason: 'Razorpay checkout cancelled by user'
+            }).catch(() => {});
+            setPaymentError('Payment cancelled. Your cart is preserved — you can retry or switch to COD below.');
             notification.warning({
               message: 'Payment Cancelled',
-              description: 'You cancelled the payment. Your order has been placed but is pending payment.',
+              description: 'You cancelled the payment. You can choose Cash on Delivery or retry.',
               placement: 'topRight'
             });
             reject(new Error('Payment modal dismissed'));
@@ -497,7 +532,7 @@ export default function CheckoutPage() {
               orderId: createdOrder.id
             });
 
-            if (verifyRes.data.success && verifyRes.data.data.verified) {
+            if (verifyRes.data.success) {
               let fullOrder = createdOrder;
               try {
                 const orderDetailRes = await axios.get(`/orders/${createdOrder.id}`);
@@ -511,12 +546,12 @@ export default function CheckoutPage() {
                   : cartSnapshotItems;
 
               fullOrder.appliedCoupon = appliedCoupon;
-              fullOrder.subtotal = subtotal;
-              fullOrder.discountAmount = discountAmount;
-              fullOrder.deliveryFee = deliveryFee;
-              fullOrder.platformFee = platformFee;
-              fullOrder.gst = gst;
-              fullOrder.grandTotal = grandTotal;
+              fullOrder.subtotal = fullOrder.subtotal !== undefined ? fullOrder.subtotal : subtotal;
+              fullOrder.discountAmount = fullOrder.discount_amount !== undefined ? fullOrder.discount_amount : discountAmount;
+              fullOrder.deliveryFee = fullOrder.delivery_fee !== undefined ? fullOrder.delivery_fee : deliveryFee;
+              fullOrder.platformFee = fullOrder.platform_fee !== undefined ? fullOrder.platform_fee : platformFee;
+              fullOrder.gst = fullOrder.tax !== undefined ? fullOrder.tax : gst;
+              fullOrder.grandTotal = fullOrder.total !== undefined ? fullOrder.total : grandTotal;
 
               sessionStorage.setItem('last_guest_order_id', fullOrder.id);
               setSuccessOrder(fullOrder);
@@ -524,21 +559,34 @@ export default function CheckoutPage() {
               await dispatch(clearCartAsync());
               resolve();
             } else {
-              reject(new Error('Payment verification failed'));
+              await axios.post('/payments/failure', {
+                orderId: createdOrder.id,
+                reason: 'Payment verification failed'
+              }).catch(() => {});
+              reject(new Error(verifyRes.data.message || 'Payment verification failed'));
             }
           } catch (verifyError) {
+            await axios.post('/payments/failure', {
+              orderId: createdOrder.id,
+              reason: verifyError.message || 'Verification exception'
+            }).catch(() => {});
             reject(verifyError);
           }
         }
       };
 
       const rzp = new window.Razorpay(options);
-      rzp.on('payment.failed', (response) => {
+      rzp.on('payment.failed', async (response) => {
+        await axios.post('/payments/failure', {
+          orderId: createdOrder.id,
+          reason: response.error?.description || 'Payment failed'
+        }).catch(() => {});
         notification.error({
           message: 'Payment Failed',
-          description: response.error?.description || 'Your payment could not be processed.',
+          description: response.error?.description || 'Your payment could not be processed. You can switch to COD.',
           placement: 'topRight'
         });
+        setPaymentError(response.error?.description || 'Payment failed. You can switch to Cash on Delivery.');
         reject(new Error(response.error?.description || 'Payment failed'));
       });
       rzp.open();
@@ -914,6 +962,37 @@ export default function CheckoutPage() {
 
                 {/* Payment Method */}
                 <div className="px-5 pb-2 border-t border-neutral-100">
+                  {paymentError && (
+                    <div className="my-3 p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs space-y-2 animate-fade-in">
+                      <div className="flex items-start gap-2 text-red-700 font-bold">
+                        <span className="text-base">⚠️</span>
+                        <span>{paymentError}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPaymentMethod('cod');
+                            setPaymentError('');
+                          }}
+                          className="px-3 py-1.5 bg-white border border-red-300 text-red-700 hover:bg-red-100/60 font-bold rounded-xl text-[11px] transition-all cursor-pointer shadow-2xs"
+                        >
+                          💵 Switch to Cash on Delivery (COD)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPaymentMethod('razorpay');
+                            setPaymentError('');
+                          }}
+                          className="px-3 py-1.5 bg-white border border-red-300 text-red-700 hover:bg-red-100/60 font-bold rounded-xl text-[11px] transition-all cursor-pointer shadow-2xs"
+                        >
+                          🔄 Retry Razorpay
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between pt-3 pb-2">
                     <h4 className="font-extrabold text-neutral-900 text-sm">Payment Method</h4>
                     <span className="text-[10px] text-neutral-400 flex items-center gap-1">

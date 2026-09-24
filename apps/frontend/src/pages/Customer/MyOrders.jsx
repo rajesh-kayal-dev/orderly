@@ -5,7 +5,7 @@ import axios from '../../api/axios';
 import socket from '../../socket';
 import { addToCartAsync } from '../../redux/slices/cartSlice';
 import EmptyState from '../../components/common/EmptyState';
-import { message, notification } from 'antd';
+import { message, notification, Modal, Input, Button } from 'antd';
 import {
   SearchOutlined,
   CalendarOutlined,
@@ -18,8 +18,15 @@ import {
   ReloadOutlined,
   CloseOutlined,
   CompassOutlined,
-  UserOutlined
+  UserOutlined,
+  StarFilled,
+  SmileOutlined,
+  MehOutlined,
+  FrownOutlined,
+  HeartFilled
 } from '@ant-design/icons';
+
+const { TextArea } = Input;
 
 const referenceOrders = [
   {
@@ -226,12 +233,66 @@ export default function MyOrders() {
   const [timeFilter, setTimeFilter] = useState('All Time');
   const [selectedOrder, setSelectedOrder] = useState(null);
 
+  // Customer Feedback System State
+  const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
+  const [feedbackOrder, setFeedbackOrder] = useState(null);
+  const [feedbackSentiment, setFeedbackSentiment] = useState('Happy');
+  const [feedbackComment, setFeedbackComment] = useState('');
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [existingFeedback, setExistingFeedback] = useState(null);
+
+  const openFeedbackModal = async (order) => {
+    setFeedbackOrder(order);
+    setFeedbackSentiment('Happy');
+    setFeedbackComment('');
+    setExistingFeedback(null);
+    setFeedbackModalVisible(true);
+
+    try {
+      const res = await axios.get(`/orders/${order.id}/feedback`);
+      if (res.data?.success && res.data?.data) {
+        setExistingFeedback(res.data.data);
+        setFeedbackSentiment(res.data.data.sentiment || 'Happy');
+        setFeedbackComment(res.data.data.comment || '');
+      }
+    } catch (err) {
+      // No prior feedback
+    }
+  };
+
+  const handleSubmitFeedback = async () => {
+    if (!feedbackOrder) return;
+    try {
+      setSubmittingFeedback(true);
+      const res = await axios.post(`/orders/${feedbackOrder.id}/feedback`, {
+        sentiment: feedbackSentiment,
+        comment: feedbackComment
+      });
+      if (res.data?.success) {
+        notification.success({
+          message: existingFeedback ? 'Feedback Updated' : 'Feedback Submitted!',
+          description: `Thank you for rating your meal as "${feedbackSentiment}".`,
+          placement: 'topRight'
+        });
+        setFeedbackModalVisible(false);
+      }
+    } catch (err) {
+      notification.error({
+        message: 'Feedback Failed',
+        description: err.response?.data?.message || err.message,
+        placement: 'topRight'
+      });
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  };
+
   const fetchOrders = async () => {
     try {
       setLoading(true);
       const res = await axios.get('/orders/me');
       if (res.data?.success && Array.isArray(res.data.data)) {
-        // Map backend orders to standard format
+        // Map backend orders to standard format and sort newest first
         const apiOrders = res.data.data.map(o => {
           const restName = o.restaurant?.name || o.Restaurant?.name || 'Orderly Restaurant';
           const restLocation = o.restaurant?.address || o.restaurant?.location || o.Restaurant?.address || 'Local City';
@@ -248,11 +309,18 @@ export default function MyOrders() {
             image: it.menuItem?.image_url || it.image || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=200'
           }));
 
-          const totalPaid = Number(o.total_amount || 0);
-          const deliveryFee = totalPaid > 0 ? 30.00 : 0;
-          const platformFee = totalPaid > 0 ? 5.00 : 0;
-          const subtotal = Math.max(0, totalPaid - deliveryFee - platformFee);
-          const gst = totalPaid * 0.05;
+          const rawTotal = Number(o.total ?? o.total_amount ?? o.totalAmount ?? 0);
+          const rawDiscount = Number(o.discount_amount ?? o.discountAmount ?? o.discount ?? 0);
+          const rawSubtotal = Number(o.subtotal ?? 0);
+          const itemsSubtotal = parsedItems.reduce((acc, it) => acc + (Number(it.price || 0) * (it.quantity || 1)), 0);
+          const subtotal = rawSubtotal > 0 ? rawSubtotal : (itemsSubtotal > 0 ? itemsSubtotal : 0);
+          const discountAmount = rawDiscount;
+          const couponCode = o.coupon_code || o.couponCode || (discountAmount > 0 ? 'FLAT50' : null);
+          const deliveryFee = Number(o.delivery_fee ?? o.deliveryFee ?? (subtotal > 0 ? 30.00 : 0));
+          const platformFee = Number(o.platform_fee ?? o.platformFee ?? (subtotal > 0 ? 5.00 : 0));
+          const taxableAmount = Math.max(0, subtotal - discountAmount);
+          const gst = Number(o.tax ?? o.gst ?? (taxableAmount * 0.05));
+          const totalPaid = rawTotal > 0 ? rawTotal : Number((taxableAmount + deliveryFee + platformFee + gst).toFixed(2));
 
           const st = (o.status || 'placed').toLowerCase();
           const timeline = [
@@ -284,6 +352,8 @@ export default function MyOrders() {
             }),
             status: st,
             subtotal: subtotal,
+            discountAmount: discountAmount,
+            couponCode: couponCode,
             deliveryFee: deliveryFee,
             platformFee: platformFee,
             gst: gst,
@@ -291,7 +361,7 @@ export default function MyOrders() {
             items: parsedItems,
             timeline: timeline
           };
-        });
+        }).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
         setOrders(apiOrders);
       } else {
@@ -402,20 +472,32 @@ export default function MyOrders() {
           <span className="px-3 py-1 bg-blue-50 text-blue-700 font-bold border border-blue-200/80 rounded-full text-xs flex items-center gap-1.5 shadow-2xs">
             <UserOutlined className="text-blue-600 text-xs" /> Driver Assigned
           </span>
-          <span className="text-xs font-bold text-orange-600 hover:underline mt-1 cursor-pointer">
+          <span 
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate('/customer/tracking');
+            }}
+            className="text-xs font-bold text-orange-600 hover:underline mt-1 cursor-pointer"
+          >
             Track Order →
           </span>
         </div>
       );
     }
-    if (st === 'out_for_delivery' || st === 'picked_up' || st === 'preparing' || st === 'placed' || st === 'accepted') {
-      const label = (st === 'out_for_delivery' || st === 'picked_up') ? 'Out for Delivery' : st === 'preparing' ? 'Preparing Food' : st === 'accepted' ? 'Confirmed' : 'Order Placed';
+    if (st === 'out_for_delivery' || st === 'picked_up' || st === 'preparing' || st === 'placed' || st === 'accepted' || st === 'ready') {
+      const label = (st === 'out_for_delivery' || st === 'picked_up') ? 'Out for Delivery' : st === 'preparing' ? 'Preparing Food' : st === 'ready' ? 'Food Ready' : st === 'accepted' ? 'Confirmed' : 'Order Placed';
       return (
         <div className="flex flex-col items-end">
           <span className="px-3 py-1 bg-amber-50 text-amber-700 font-bold border border-amber-200/80 rounded-full text-xs flex items-center gap-1.5 shadow-2xs">
             <CarOutlined className="text-amber-600 text-xs" /> {label}
           </span>
-          <span className="text-xs font-bold text-orange-600 hover:underline mt-1 cursor-pointer">
+          <span 
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate('/customer/tracking');
+            }}
+            className="text-xs font-bold text-orange-600 hover:underline mt-1 cursor-pointer"
+          >
             Track Order →
           </span>
         </div>
@@ -584,8 +666,20 @@ export default function MyOrders() {
                       <div className="flex flex-col items-start md:items-end gap-1">
                         {renderStatusBadge(ord.status)}
                         <span className="font-black text-neutral-900 text-lg mt-1">
-                          ₹{Number(ord.totalPaid || ord.total_amount).toFixed(2)}
+                          ₹{Number(ord.totalPaid ?? ord.total_amount ?? 0).toFixed(2)}
                         </span>
+                        {['delivered', 'completed'].includes(ord.status) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openFeedbackModal(ord);
+                            }}
+                            className="mt-1 px-2.5 py-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-[11px] rounded-lg flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
+                          >
+                            <StarFilled className="text-xs text-amber-200" />
+                            <span>Rate Meal</span>
+                          </button>
+                        )}
                       </div>
 
                       <div className="text-neutral-300 group-hover:text-orange-600 group-hover:translate-x-1 transition-all">
@@ -731,54 +825,152 @@ export default function MyOrders() {
               <div className="bg-neutral-50/70 border border-neutral-200/80 rounded-2xl p-4 space-y-2.5 text-xs text-neutral-600">
                 <div className="flex justify-between">
                   <span>Subtotal</span>
-                  <span className="font-bold text-neutral-800">₹{selectedOrder.subtotal.toFixed(2)}</span>
+                  <span className="font-bold text-neutral-800">₹{Number(selectedOrder.subtotal || 0).toFixed(2)}</span>
                 </div>
+                {Number(selectedOrder.discountAmount || 0) > 0 && (
+                  <div className="flex justify-between text-emerald-600 font-bold">
+                    <span>Promo Discount ({selectedOrder.couponCode || 'PROMO'})</span>
+                    <span>-₹{Number(selectedOrder.discountAmount).toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span>Delivery Fee</span>
-                  <span className="font-bold text-neutral-800">₹{selectedOrder.deliveryFee.toFixed(2)}</span>
+                  <span className="font-bold text-neutral-800">₹{Number(selectedOrder.deliveryFee || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Platform Fee</span>
-                  <span className="font-bold text-neutral-800">₹{selectedOrder.platformFee.toFixed(2)}</span>
+                  <span className="font-bold text-neutral-800">₹{Number(selectedOrder.platformFee || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>GST (5%)</span>
-                  <span className="font-bold text-neutral-800">₹{selectedOrder.gst.toFixed(2)}</span>
+                  <span className="font-bold text-neutral-800">₹{Number(selectedOrder.gst || 0).toFixed(2)}</span>
                 </div>
 
                 <div className="h-px bg-neutral-200 my-2" />
 
                 <div className="flex justify-between items-center text-neutral-900 text-sm">
                   <span className="font-bold">Total Paid</span>
-                  <span className="font-black text-lg text-neutral-900">₹{selectedOrder.totalPaid.toFixed(2)}</span>
+                  <span className="font-black text-lg text-neutral-900">₹{Number(selectedOrder.totalPaid || 0).toFixed(2)}</span>
                 </div>
               </div>
 
             </div>
 
             {/* Sticky Bottom Action Buttons */}
-            <div className="p-5 border-t border-neutral-100 bg-white sticky bottom-0 flex gap-3">
-              <button
-                onClick={() => handleReorderAll(selectedOrder)}
-                className="flex-1 py-3 bg-white text-orange-600 border border-orange-500 font-bold text-xs rounded-xl hover:bg-orange-50 transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
-              >
-                <ReloadOutlined /> Reorder All
-              </button>
+            <div className="p-5 border-t border-neutral-100 bg-white sticky bottom-0 flex flex-col gap-2.5">
+              {['delivered', 'completed'].includes(selectedOrder.status) && (
+                <button
+                  onClick={() => openFeedbackModal(selectedOrder)}
+                  className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                >
+                  <StarFilled className="text-amber-200" /> Rate Meal & Give Feedback
+                </button>
+              )}
 
-              <button
-                onClick={() => {
-                  setSelectedOrder(null);
-                  navigate('/customer/tracking');
-                }}
-                className="flex-1 py-3 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-md transition-colors cursor-pointer"
-              >
-                <CompassOutlined /> Track Order →
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handleReorderAll(selectedOrder)}
+                  className="flex-1 py-3 bg-white text-orange-600 border border-orange-500 font-bold text-xs rounded-xl hover:bg-orange-50 transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
+                >
+                  <ReloadOutlined /> Reorder All
+                </button>
+
+                <button
+                  onClick={() => {
+                    setSelectedOrder(null);
+                    navigate('/customer/tracking');
+                  }}
+                  className="flex-1 py-3 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-md transition-colors cursor-pointer"
+                >
+                  <CompassOutlined /> Track Order →
+                </button>
+              </div>
             </div>
 
           </div>
         </>
       )}
+
+      {/* ── CUSTOMER FEEDBACK MODAL ── */}
+      <Modal
+        title={
+          <div className="flex items-center gap-2 text-slate-900 font-black text-lg">
+            <StarFilled className="text-amber-500" />
+            <span>How was your meal from {feedbackOrder?.restaurant?.name || 'Orderly Kitchen'}?</span>
+          </div>
+        }
+        open={feedbackModalVisible}
+        onCancel={() => setFeedbackModalVisible(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setFeedbackModalVisible(false)} className="rounded-xl font-semibold">
+            Cancel
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            loading={submittingFeedback}
+            onClick={handleSubmitFeedback}
+            className="rounded-xl font-bold bg-[#FF521C] hover:bg-[#E04310] border-none text-white px-6"
+          >
+            {existingFeedback ? 'Update Feedback' : 'Submit Feedback'}
+          </Button>
+        ]}
+        width={520}
+        className="rounded-2xl"
+      >
+        <div className="py-3 space-y-5 text-xs font-sans">
+          {existingFeedback && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-[11px] font-semibold flex items-center gap-2">
+              <StarFilled className="text-amber-500" />
+              <span>You previously submitted feedback for this order. Submitting now will update your review.</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+              Select Your Sentiment:
+            </label>
+            <div className="grid grid-cols-2 gap-2.5">
+              {[
+                { key: 'Happy', label: 'Happy', emoji: '😊', icon: <SmileOutlined className="text-emerald-500 text-base" />, desc: 'Loved the food & service', activeBg: 'bg-emerald-50 border-emerald-500 text-emerald-900' },
+                { key: 'Satisfied', label: 'Satisfied', emoji: '🙂', icon: <SmileOutlined className="text-blue-500 text-base" />, desc: 'Good and as expected', activeBg: 'bg-blue-50 border-blue-500 text-blue-900' },
+                { key: 'Unsatisfied', label: 'Unsatisfied', emoji: '😐', icon: <MehOutlined className="text-amber-500 text-base" />, desc: 'Could be improved', activeBg: 'bg-amber-50 border-amber-500 text-amber-900' },
+                { key: 'Bad', label: 'Bad', emoji: '😞', icon: <FrownOutlined className="text-rose-500 text-base" />, desc: 'Poor experience', activeBg: 'bg-rose-50 border-rose-500 text-rose-900' }
+              ].map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setFeedbackSentiment(item.key)}
+                  className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                    feedbackSentiment === item.key
+                      ? item.activeBg + ' shadow-xs ring-2 ring-orange-500/20'
+                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="font-extrabold text-sm">{item.emoji} {item.label}</span>
+                    {item.icon}
+                  </div>
+                  <span className="text-[10px] text-slate-500 leading-tight">{item.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              Comments (Optional):
+            </label>
+            <TextArea
+              rows={3}
+              value={feedbackComment}
+              onChange={(e) => setFeedbackComment(e.target.value)}
+              placeholder="Tell us what you liked or what could be improved about the taste, temperature, or packaging..."
+              className="text-xs rounded-xl p-3 border-slate-200 focus:border-[#FF521C]"
+            />
+          </div>
+        </div>
+      </Modal>
 
     </div>
   );

@@ -6,7 +6,7 @@ import socket from '../../socket';
 import Navbar from '../layout/Navbar';
 import Footer from '../layout/Footer';
 
-export default function CustomerLayout() {
+export default function CustomerLayout({ children }) {
   const location = useLocation();
   const { token } = useSelector((state) => state.auth);
   const [activeOrdersCount, setActiveOrdersCount] = useState(0);
@@ -49,7 +49,7 @@ export default function CustomerLayout() {
       <Navbar activeOrdersCount={activeOrdersCount} />
 
       <main className="flex-grow pt-16">
-        <Outlet />
+        {children || <Outlet />}
       </main>
 
       <Footer />

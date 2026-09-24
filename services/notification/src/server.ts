@@ -41,7 +41,13 @@ app.get("/health", (_req, res) => {
 const port = Number(process.env.PORT ?? 3007);
 
 async function start(): Promise<void> {
-  await kafkaNotificationConsumer.start();
+  try {
+    await kafkaNotificationConsumer.start();
+    console.log(`[Notification] Kafka consumer connected`);
+  } catch {
+    console.log(`[Notification] Event broker offline (${process.env.KAFKA_BROKERS ?? "localhost:9092"}). Running in standalone mode.`);
+  }
+
   app.listen(port, () => {
     console.log(`Notification service running on port ${port}`);
   });
@@ -49,15 +55,10 @@ async function start(): Promise<void> {
 
 async function shutdown(signal: string): Promise<void> {
   console.log(`Notification service received ${signal}; disconnecting Kafka consumer`);
-  await kafkaNotificationConsumer.stop().catch((error: unknown) => {
-    console.error("Notification service failed to disconnect Kafka consumer", error);
-  });
+  await kafkaNotificationConsumer.stop().catch(() => {});
 }
 
 process.once("SIGINT", () => void shutdown("SIGINT"));
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
-void start().catch((error: unknown) => {
-  console.error("Notification service failed to start Kafka consumer", error);
-  process.exitCode = 1;
-});
+void start();

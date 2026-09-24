@@ -41,8 +41,14 @@ app.get("/health", (_req, res) => {
 const port = Number(process.env.PORT ?? 3006);
 
 async function start(): Promise<void> {
-  await ensureTopics(kafka);
-  await kafkaProducer.connect();
+  try {
+    await ensureTopics(kafka);
+    await kafkaProducer.connect();
+    console.log(`[Delivery] Kafka producer connected`);
+  } catch {
+    console.log(`[Delivery] Event broker offline (${process.env.KAFKA_BROKERS ?? "localhost:9092"}). Running in standalone mode.`);
+  }
+
   app.listen(port, () => {
     console.log(`Delivery service running on port ${port}`);
   });
@@ -50,15 +56,10 @@ async function start(): Promise<void> {
 
 async function shutdown(signal: string): Promise<void> {
   console.log(`Delivery service received ${signal}; disconnecting Kafka producer`);
-  await kafkaProducer.disconnect().catch((error: unknown) => {
-    console.error("Delivery service failed to disconnect Kafka producer", error);
-  });
+  await kafkaProducer.disconnect().catch(() => {});
 }
 
 process.once("SIGINT", () => void shutdown("SIGINT"));
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
-void start().catch((error: unknown) => {
-  console.error("Delivery service failed to start Kafka publishing", error);
-  process.exitCode = 1;
-});
+void start();

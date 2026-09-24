@@ -59,9 +59,9 @@ export default function AuthCallback() {
         // Redirect based on role
         setTimeout(() => {
           const role = user.role?.toLowerCase();
-          if (role === 'admin') navigate('/admin/dashboard');
-          else if (role === 'restaurant') navigate('/restaurant/dashboard');
-          else if (role === 'delivery_partner') navigate('/delivery/dashboard');
+          if (role === 'admin') navigate('/admin');
+          else if (role === 'restaurant') navigate('/restaurant');
+          else if (role === 'delivery_partner') navigate('/delivery');
           else navigate('/customer');
         }, 800);
       } catch (err) {
@@ -97,9 +97,15 @@ export default function AuthCallback() {
         {status === 'error' && (
           <div className="flex flex-col items-center gap-3 py-6 text-red-600 animate-slide-up">
             <ExclamationCircleOutlined className="text-5xl text-red-500" />
-            <h2 className="text-2xl font-black text-gray-800">Authentication Failed</h2>
-            <p className="text-gray-600 text-sm">{errorMessage}</p>
-            <p className="text-gray-400 text-xs mt-2">Redirecting back to login in a few seconds...</p>
+            <h2 className="text-2xl font-black text-gray-800">Authentication Notice</h2>
+            <p className="text-gray-600 text-sm max-w-xs">{errorMessage}</p>
+            <button
+              onClick={() => navigate('/login')}
+              className="mt-4 px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+            >
+              Back to Sign In
+            </button>
+            <p className="text-gray-400 text-[11px] mt-1">Redirecting automatically in 3.5s...</p>
           </div>
         )}
       </div>

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { logout } from '../../redux/slices/authSlice';
 import { resetCartState } from '../../redux/slices/cartSlice';
+import axios from '../../api/axios';
 import socket from '../../socket';
 import BrandLogo from '../common/BrandLogo';
 import {
@@ -25,8 +26,12 @@ export default function DeliveryLayout() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, profile } = useSelector(state => state.auth);
+  const { user, profile, token } = useSelector(state => state.auth);
   const activeCount = useSelector(state => state.order?.activeCount);
+
+  if (!token || user?.role !== 'delivery_partner') {
+    return <Navigate to="/login" replace />;
+  }
 
   // Track online status from redux profile in real time
   const isOnline = Boolean(profile?.is_available);
@@ -58,11 +63,23 @@ export default function DeliveryLayout() {
 
     socket.connect();
     socket.emit('join', user.id);
+    socket.emit('join_deliveries');
+    socket.emit('join', 'role_delivery');
 
-    // Only broadcast-subscribe to available deliveries when online
-    if (isOnline) {
-      socket.emit('join_deliveries');
-    }
+    // Fetch persistent delivery notifications on mount
+    axios.get('/notifications').then((res) => {
+      if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+        const mapped = res.data.data.map((n) => ({
+          id: n.id,
+          title: n.title || n.message,
+          time: n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently',
+          read: Boolean(n.read),
+          link: '/delivery/orders',
+          orderId: n.orderId,
+        }));
+        setNotificationsList(mapped);
+      }
+    }).catch(() => {});
 
     const handleDeliveryOffer = (data) => {
       if (!isOnline) return;
