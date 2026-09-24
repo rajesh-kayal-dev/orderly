@@ -507,20 +507,28 @@ async function syncFromDatabase() {
       const resDps = await dbPool.query(`SELECT * FROM "DeliveryPartner";`);
       for (const row of resDps.rows) {
         const existIdx = deliveryPartners.findIndex((d) => d.userId === row.user_id || d.id === row.id);
+        const ownerUser = users.find((u) => u.id === row.user_id || u.id === row.id || `dp-${u.id}` === row.id);
+        const dpName = ownerUser?.full_name || row.full_name || "Delivery Partner";
+        const dpPhone = ownerUser?.phone_number || row.phone || "+91 9845600000";
+        const isApproved = ownerUser
+          ? ((ownerUser.status === "ACTIVE" || ownerUser.status === "active") && ownerUser.is_active === true)
+          : (row.status === "ACTIVE" || row.status === "active");
+
         const dpObj = {
           id: row.id,
           userId: row.user_id,
-          fullName: row.full_name || "Delivery Partner",
-          name: row.full_name || "Delivery Partner",
-          phone: row.phone || null,
-          area: row.area || "Indore",
+          fullName: dpName,
+          name: dpName,
+          email: ownerUser?.email || undefined,
+          phone: dpPhone,
+          area: row.area || "City Center",
           deliveries: row.deliveries || "0",
           vehicle_type: row.vehicle_type || "Motorcycle",
           vehicle_number: row.vehicle_number || "MP-09-AB-1234",
           is_available: Boolean(row.is_available),
           rating: Number(row.rating || 4.9),
-          status: row.status || "PENDING_APPROVAL",
-          is_active: row.status === "ACTIVE" || row.status === "active",
+          status: isApproved ? "ACTIVE" : (row.status || "PENDING_APPROVAL"),
+          is_active: isApproved,
           image: "",
           current_location: { lat: 22.7196, lng: 75.8577 },
           created_at: row.created_at?.toISOString ? row.created_at.toISOString() : String(row.created_at),
@@ -531,7 +539,41 @@ async function syncFromDatabase() {
           deliveryPartners.push(dpObj);
         }
       }
-      console.log(`[Neon DB Sync] Synced ${resDps.rows.length} delivery partners from Neon PostgreSQL.`);
+
+      // Auto-sync fallback delivery partners for delivery_partner accounts without a profile
+      for (const u of users) {
+        const roleLower = (u.role || "").toLowerCase();
+        if (roleLower === "delivery_partner" || roleLower === "driver" || roleLower === "delivery") {
+          const existDp = deliveryPartners.find((d) => d.userId === u.id || d.id === u.id || d.id === `dp-${u.id}` || (d.email && u.email && d.email.toLowerCase() === u.email.toLowerCase()));
+          const isApproved = (u.status === "ACTIVE" || u.status === "active") && u.is_active === true;
+          const dpName = u.full_name || "Delivery Partner";
+          const dpObj = {
+            id: existDp?.id || `dp-${u.id}`,
+            userId: u.id,
+            fullName: dpName,
+            name: dpName,
+            email: u.email,
+            phone: u.phone_number || "+91 9845600000",
+            area: existDp?.area || "City Center",
+            deliveries: existDp?.deliveries || "0",
+            vehicle_type: existDp?.vehicle_type || "Motorcycle",
+            vehicle_number: existDp?.vehicle_number || "DL-01-AB-1234",
+            is_available: existDp ? existDp.is_available : isApproved,
+            rating: existDp?.rating || 5.0,
+            status: isApproved ? "ACTIVE" : (u.status || "PENDING_APPROVAL"),
+            is_active: isApproved,
+            image: existDp?.image || "",
+            current_location: existDp?.current_location || { lat: 22.7196, lng: 75.8577 },
+            created_at: u.created_at || new Date().toISOString(),
+          };
+          if (existDp) {
+            Object.assign(existDp, dpObj);
+          } else {
+            deliveryPartners.push(dpObj);
+          }
+        }
+      }
+      console.log(`[Neon DB Sync] Synced ${deliveryPartners.length} delivery partners from Neon PostgreSQL.`);
     } catch (mErr: any) {
       console.warn("[Neon DB Menu, Order & Notif Sync] Notice:", mErr.message);
     }
@@ -3441,7 +3483,7 @@ export function createGatewayApp(): express.Express {
     // 1. Sync latest driver statuses from PostgreSQL DB
     try {
       const resDrivers = await dbPool.query(
-        `SELECT id, email, role, full_name, "fullName", phone_number, "phoneNumber", status, is_active, is_blocked, created_at FROM "User" WHERE LOWER(role) IN ('delivery_partner', 'driver', 'delivery') ORDER BY created_at DESC;`
+        `SELECT id, email, role, full_name, "fullName", phone_number, "phoneNumber", status, is_active, is_blocked, created_at FROM "User" WHERE LOWER(role::text) IN ('delivery_partner', 'driver', 'delivery') ORDER BY created_at DESC;`
       );
       for (const row of resDrivers.rows) {
         const nameVal = row.fullName || row.full_name || "Delivery Partner";
@@ -5619,20 +5661,20 @@ export function createGatewayApp(): express.Express {
       const resDrivers = await dbPool.query(
         `SELECT id, email, role, full_name, "fullName", phone_number, "phoneNumber", status, is_active, is_blocked, created_at
          FROM "User"
-         WHERE LOWER(role) IN ('delivery_partner', 'driver', 'delivery')
+         WHERE LOWER(role::text) IN ('delivery_partner', 'driver', 'delivery')
          ORDER BY created_at DESC;`
       );
       for (const row of resDrivers.rows) {
         const existingUser = users.find((u) => u.id === row.id || (row.email && u.email && u.email.toLowerCase() === row.email.toLowerCase()));
         const nameVal = row.fullName || row.full_name || "Delivery Partner";
         const phoneVal = row.phoneNumber || row.phone_number || null;
-        const statusVal = row.status || (row.is_active ? "ACTIVE" : "PENDING_APPROVAL");
-        const isApproved = (statusVal === "ACTIVE" || statusVal === "active" || statusVal === "VERIFIED") && row.is_active === true && !row.is_blocked;
+        const isApproved = (row.status === "ACTIVE" || row.status === "active" || row.status === "VERIFIED") && row.is_active === true && !row.is_blocked;
+        const statusVal = isApproved ? "ACTIVE" : (row.status || "PENDING_APPROVAL");
         
         if (existingUser) {
           existingUser.full_name = nameVal;
           existingUser.phone_number = phoneVal;
-          existingUser.status = (isApproved ? "active" : statusVal.toLowerCase()) as any;
+          existingUser.status = isApproved ? "active" : (statusVal.toLowerCase() as any);
           (existingUser as any).is_active = Boolean(row.is_active);
           (existingUser as any).is_blocked = Boolean(row.is_blocked);
           if (row.email) existingUser.email = row.email;
@@ -5643,7 +5685,7 @@ export function createGatewayApp(): express.Express {
             role: "delivery_partner" as any,
             full_name: nameVal,
             phone_number: phoneVal,
-            status: (isApproved ? "active" : statusVal.toLowerCase()) as any,
+            status: isApproved ? "active" : (statusVal.toLowerCase() as any),
             created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
           });
         }
@@ -5687,33 +5729,46 @@ export function createGatewayApp(): express.Express {
     }
 
     const { search, status, availability } = req.query;
-    let list = deliveryPartners.map((dp) => {
+    const seenUserIds = new Set<string>();
+    const uniquePartners: any[] = [];
+
+    for (const dp of deliveryPartners) {
+      const key = dp.userId || dp.id;
+      if (key && !seenUserIds.has(key)) {
+        seenUserIds.add(key);
+        uniquePartners.push(dp);
+      }
+    }
+
+    let list = uniquePartners.map((dp) => {
       const u = users.find((user) => user.id === dp.userId || user.id === dp.id || (dp.email && user.email && user.email.toLowerCase() === dp.email.toLowerCase()));
       let computedStatus: "ACTIVE" | "PENDING_APPROVAL" | "SUSPENDED" | "BLOCKED" | "DELETED" = "ACTIVE";
-      const rawStatus = ((dp as any).status || u?.status || (u?.is_active ? "ACTIVE" : "PENDING_APPROVAL")).toUpperCase();
+      const uApproved = Boolean(u && (u.status === "ACTIVE" || u.status === "active" || (u as any).is_active === true) && !(u as any).is_blocked && !u.deleted_at);
+      const rawStatus = String(u?.status || (dp as any).status || "PENDING_APPROVAL").toUpperCase();
 
       if (dp.deleted_at || (dp as any).status === "DELETED" || u?.deleted_at || rawStatus === "DELETED") {
         computedStatus = "DELETED";
       } else if ((dp as any).status === "BLOCKED" || u?.status === "blocked" || (u as any)?.is_blocked || rawStatus === "BLOCKED") {
         computedStatus = "BLOCKED";
-      } else if (rawStatus === "PENDING" || rawStatus === "PENDING_APPROVAL" || rawStatus === "PENDING REVIEW" || (u && u.is_active === false && rawStatus !== "SUSPENDED" && rawStatus !== "BLOCKED")) {
-        computedStatus = "PENDING_APPROVAL";
+      } else if (uApproved || (dp as any).status === "ACTIVE" || (dp as any).is_active === true) {
+        computedStatus = "ACTIVE";
       } else if (rawStatus === "SUSPENDED" || u?.status === "suspended") {
         computedStatus = "SUSPENDED";
       } else {
-        computedStatus = "ACTIVE";
+        computedStatus = "PENDING_APPROVAL";
       }
 
       const driverDeliveries = orders.filter((o) => o.delivery_partner_id === dp.userId || o.delivery_partner_id === dp.id).length;
       const createdAt = dp.created_at || u?.created_at || new Date().toISOString();
+      const resolvedName = u?.full_name && u.full_name !== "Delivery Partner" ? u.full_name : (dp.fullName && dp.fullName !== "Delivery Partner" ? dp.fullName : (dp.name || "Delivery Partner"));
 
       return {
         id: dp.id,
         userId: dp.userId || dp.id,
-        name: dp.name || dp.fullName || u?.full_name || "Delivery Driver",
-        fullName: dp.fullName || dp.name || u?.full_name || "Delivery Driver",
+        name: resolvedName,
+        fullName: resolvedName,
         email: u?.email || dp.email || "driver@ofds.com",
-        phone: dp.phone || u?.phone_number || "+91 9845600000",
+        phone: u?.phone_number || dp.phone || "+91 9845600000",
         area: dp.area || "City Center",
         deliveries: dp.deliveries || driverDeliveries || "0",
         vehicle_type: dp.vehicle_type || "Motorcycle",
