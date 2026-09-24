@@ -383,48 +383,59 @@ async function syncFromDatabase() {
         );
       `);
 
-      // Sync Categories
-      const resCats = await dbPool.query(`SELECT id, restaurant_id, name FROM "MenuCategory";`);
-      if (resCats.rows.length === 0) {
-        for (const cat of categories) {
-          await persistMenuCategoryToDb(cat);
+      // Ensure MenuItem columns exist in PostgreSQL
+      await dbPool.query(`
+        ALTER TABLE "MenuItem" ADD COLUMN IF NOT EXISTS category VARCHAR(128);
+        ALTER TABLE "MenuItem" ADD COLUMN IF NOT EXISTS image TEXT;
+        ALTER TABLE "MenuItem" ADD COLUMN IF NOT EXISTS is_veg BOOLEAN DEFAULT false;
+        ALTER TABLE "MenuItem" ADD COLUMN IF NOT EXISTS image_url TEXT;
+        ALTER TABLE "MenuItem" ADD COLUMN IF NOT EXISTS category_id TEXT;
+      `).catch(() => {});
+
+      // Sync Categories from PostgreSQL
+      const resCats = await dbPool
+        .query(`SELECT id, restaurant_id, name FROM "Category" UNION SELECT id, restaurant_id, name FROM "MenuCategory";`)
+        .catch(() => dbPool.query(`SELECT id, restaurant_id, name FROM "Category";`))
+        .catch(() => ({ rows: [] }));
+
+      for (const row of resCats.rows) {
+        if (!categories.some((c) => c.id === row.id || (c.name.toLowerCase() === row.name.toLowerCase() && c.restaurant_id === row.restaurant_id))) {
+          categories.push({ id: row.id, restaurant_id: row.restaurant_id, name: row.name });
         }
-      } else {
-        for (const row of resCats.rows) {
-          if (!categories.some((c) => c.id === row.id)) {
-            categories.push({ id: row.id, restaurant_id: row.restaurant_id, name: row.name });
-          }
+      }
+      for (const cat of categories) {
+        await persistMenuCategoryToDb(cat);
+      }
+
+      // Sync Menu Items from PostgreSQL
+      const resItems = await dbPool.query(`SELECT * FROM "MenuItem" ORDER BY created_at DESC;`).catch(() => ({ rows: [] }));
+      for (const row of resItems.rows) {
+        const existIdx = menuItems.findIndex((m) => m.id === row.id);
+        const resolvedCategory = row.category || (categories.find((c) => c.id === row.category_id)?.name) || "General";
+        const resolvedImage = row.image || row.image_url || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500";
+        const itemObj: MenuItemRecord = {
+          id: row.id,
+          restaurant_id: row.restaurant_id,
+          name: row.name,
+          description: row.description || "",
+          price: Number(row.price || 0),
+          category: resolvedCategory,
+          image: resolvedImage,
+          is_available: row.is_available !== false,
+          is_veg: Boolean(row.is_veg),
+        };
+        if (existIdx >= 0) {
+          menuItems[existIdx] = itemObj;
+        } else {
+          menuItems.push(itemObj);
         }
       }
 
-      // Sync Menu Items
-      const resItems = await dbPool.query(`SELECT * FROM "MenuItem" ORDER BY created_at DESC;`);
-      if (resItems.rows.length === 0) {
-        for (const it of menuItems) {
-          await persistMenuItemToDb(it);
-        }
-      } else {
-        for (const row of resItems.rows) {
-          const existIdx = menuItems.findIndex((m) => m.id === row.id);
-          const itemObj: MenuItemRecord = {
-            id: row.id,
-            restaurant_id: row.restaurant_id,
-            name: row.name,
-            description: row.description || "",
-            price: Number(row.price || 0),
-            category: row.category || "General",
-            image: row.image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500",
-            is_available: row.is_available !== false,
-            is_veg: Boolean(row.is_veg),
-          };
-          if (existIdx >= 0) {
-            menuItems[existIdx] = itemObj;
-          } else {
-            menuItems.unshift(itemObj);
-          }
-        }
+      // Persist all menu items so everything remains safely in DB
+      for (const it of menuItems) {
+        await persistMenuItemToDb(it);
       }
-      console.log(`[Neon DB Sync] Synced ${menuItems.length} menu items from Neon PostgreSQL.`);
+      console.log(`[Neon DB Sync] Synced and persisted ${menuItems.length} menu items in Neon PostgreSQL.`);
 
       // Sync Orders
       const resOrders = await dbPool.query(`SELECT * FROM "Order" ORDER BY created_at DESC LIMIT 500;`);
@@ -692,6 +703,11 @@ const categories: MenuCategoryRecord[] = [
   { id: "cat-sides", restaurant_id: "1", name: "Sides" },
   { id: "cat-pizza", restaurant_id: "2", name: "Pizza" },
   { id: "cat-biryani", restaurant_id: "3", name: "Biryani" },
+  { id: "cat-north-indian", restaurant_id: "4f0b82f4-1c05-4e33-9691-5dca3c7884a3", name: "North Indian" },
+  { id: "cat-sushi", restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5", name: "Sushi" },
+  { id: "cat-asian", restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5", name: "Asian" },
+  { id: "cat-healthy", restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5", name: "Healthy" },
+  { id: "cat-pasta", restaurant_id: "2", name: "Pasta" },
   { id: "cat-starters", restaurant_id: "1", name: "Starters" },
   { id: "cat-beverages", restaurant_id: "1", name: "Beverages" },
   { id: "cat-desserts", restaurant_id: "1", name: "Desserts" },
@@ -711,28 +727,36 @@ interface MenuItemRecord {
 
 export async function persistMenuItemToDb(item: MenuItemRecord) {
   try {
+    const matchedCat = categories.find((c) => c.name.toLowerCase() === (item.category || "").toLowerCase());
+    const catId = matchedCat?.id || item.category || "General";
+    const imgUrl = item.image || (item as any).image_url || "";
     await dbPool.query(
-      `INSERT INTO "MenuItem" (id, restaurant_id, category, name, description, price, image, is_available, is_veg, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+      `INSERT INTO "MenuItem" (id, restaurant_id, category_id, category, name, description, price, image, image_url, is_available, is_veg, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
        ON CONFLICT (id) DO UPDATE SET
+         restaurant_id = EXCLUDED.restaurant_id,
+         category_id = EXCLUDED.category_id,
+         category = EXCLUDED.category,
          name = EXCLUDED.name,
          description = EXCLUDED.description,
          price = EXCLUDED.price,
-         category = EXCLUDED.category,
          image = EXCLUDED.image,
+         image_url = EXCLUDED.image_url,
          is_available = EXCLUDED.is_available,
          is_veg = EXCLUDED.is_veg,
          updated_at = NOW();`,
       [
         item.id,
         item.restaurant_id,
-        item.category,
+        catId,
+        item.category || "General",
         item.name,
-        item.description,
-        item.price,
-        item.image,
-        item.is_available,
-        item.is_veg,
+        item.description || "",
+        Number(item.price) || 0,
+        imgUrl,
+        imgUrl,
+        Boolean(item.is_available ?? true),
+        Boolean(item.is_veg),
       ]
     );
   } catch (err: any) {
@@ -752,6 +776,12 @@ export async function persistMenuCategoryToDb(cat: { id: string; restaurant_id: 
   try {
     await dbPool.query(
       `INSERT INTO "MenuCategory" (id, restaurant_id, name, created_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;`,
+      [cat.id, cat.restaurant_id, cat.name]
+    );
+    await dbPool.query(
+      `INSERT INTO "Category" (id, restaurant_id, name, created_at)
        VALUES ($1, $2, $3, NOW())
        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;`,
       [cat.id, cat.restaurant_id, cat.name]
@@ -971,6 +1001,7 @@ export async function createAndBroadcastNotification(notif: any) {
 }
 
 const menuItems: MenuItemRecord[] = [
+  // 1. The Gourmet Burger Co. (id: "1")
   {
     id: "item-1",
     restaurant_id: "1",
@@ -994,6 +1025,19 @@ const menuItems: MenuItemRecord[] = [
     is_veg: true,
   },
   {
+    id: "item-1-burger-double",
+    restaurant_id: "1",
+    name: "Double Bacon Cheeseburger",
+    description: "Two prime patties, crispy maple bacon, caramelized onions, BBQ secret sauce.",
+    price: 249,
+    category: "Burgers",
+    image: "https://images.unsplash.com/photo-1586190848861-99aa4a171e90?w=500&auto=format&fit=crop&q=60",
+    is_available: true,
+    is_veg: false,
+  },
+
+  // 2. Pizza Napoli Trattoria (id: "2")
+  {
     id: "item-3",
     restaurant_id: "2",
     name: "Margherita D.O.P.",
@@ -1005,6 +1049,30 @@ const menuItems: MenuItemRecord[] = [
     is_veg: true,
   },
   {
+    id: "item-2-pepperoni",
+    restaurant_id: "2",
+    name: "Pepperoni Rustica Pizza",
+    description: "Spicy pepperoni, smoked mozzarella, hot honey drizzle, oregano on sourdough crust.",
+    price: 389,
+    category: "Pizza",
+    image: "https://images.unsplash.com/photo-1628840042765-356cda07504e?w=500&auto=format&fit=crop&q=60",
+    is_available: true,
+    is_veg: false,
+  },
+  {
+    id: "item-2-pasta-fettuccine",
+    restaurant_id: "2",
+    name: "Truffle Mushroom Fettuccine",
+    description: "Fresh homemade egg pasta, wild forest mushrooms, black truffle cream, aged parmesan.",
+    price: 329,
+    category: "Pasta",
+    image: "https://images.unsplash.com/photo-1473093295043-cdd812d0e601?w=500&auto=format&fit=crop&q=60",
+    is_available: true,
+    is_veg: true,
+  },
+
+  // 3. Spice Symphony & Biryani (id: "3")
+  {
     id: "item-4",
     restaurant_id: "3",
     name: "Hyderabadi Dum Chicken Biryani",
@@ -1015,6 +1083,19 @@ const menuItems: MenuItemRecord[] = [
     is_available: true,
     is_veg: false,
   },
+  {
+    id: "item-3-mutton-biryani",
+    restaurant_id: "3",
+    name: "Royal Awadhi Mutton Biryani",
+    description: "Tender goat meat slow cooked on dum with aromatic spices and saffron infused basmati.",
+    price: 399,
+    category: "Biryani",
+    image: "https://images.unsplash.com/photo-1633945274405-b6c8069047b0?w=500&auto=format&fit=crop&q=60",
+    is_available: true,
+    is_veg: false,
+  },
+
+  // 4. Abhishek's Restaurant (id: "4f0b82f4-1c05-4e33-9691-5dca3c7884a3")
   {
     id: "item-abhishek-1",
     restaurant_id: "4f0b82f4-1c05-4e33-9691-5dca3c7884a3",
@@ -1045,6 +1126,137 @@ const menuItems: MenuItemRecord[] = [
     price: 299,
     category: "North Indian",
     image: "https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=500&auto=format&fit=crop&q=60",
+    is_available: true,
+    is_veg: true,
+  },
+  {
+    id: "item-abhishek-4",
+    restaurant_id: "4f0b82f4-1c05-4e33-9691-5dca3c7884a3",
+    name: "Dal Makhani Grand",
+    description: "Black lentils slow-cooked overnight with creamy butter and mild royal spices.",
+    price: 249,
+    category: "North Indian",
+    image: "https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=500&auto=format&fit=crop&q=60",
+    is_available: true,
+    is_veg: true,
+  },
+
+  // 5. Orderly Gourmet Hub (id: "ac31365d-f83f-47b6-8d23-e024a7a494c5")
+  {
+    id: "ad43c122-2e2a-4408-9588-de5edf6f3bc0",
+    restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5",
+    name: "Orderly Classic Burger",
+    description: "Juicy beef patty with sharp cheddar, crisp lettuce, and signature sauce.",
+    price: 199,
+    category: "Burgers",
+    image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=500",
+    is_available: true,
+    is_veg: false,
+  },
+  {
+    id: "d08e9664-bfd7-4da5-b110-f840ef016a67",
+    restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5",
+    name: "Truffle Fries",
+    description: "Crispy golden fries tossed in truffle oil and parmesan cheese.",
+    price: 149,
+    category: "Sides",
+    image: "https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=500",
+    is_available: true,
+    is_veg: true,
+  },
+  {
+    id: "ee2de7f9-2f06-47cb-89a9-b01fdd07e6b6",
+    restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5",
+    name: "Fresh Berry Lemonade",
+    description: "Hand-squeezed lemonade with fresh organic raspberries.",
+    price: 99,
+    category: "Beverages",
+    image: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=500",
+    is_available: true,
+    is_veg: true,
+  },
+  {
+    id: "item-gourmet-sushi",
+    restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5",
+    name: "Dragon Roll Sushi",
+    description: "Eel, crispy prawn tempura, avocado, nori, glazed with unagi reduction.",
+    price: 349,
+    category: "Sushi",
+    image: "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=500&auto=format&fit=crop&q=60",
+    is_available: true,
+    is_veg: false,
+  },
+  {
+    id: "item-gourmet-healthy",
+    restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5",
+    name: "Chicken Caesar Salad",
+    description: "Crisp romaine, shaved parmesan, garlic croutons, herb grilled chicken.",
+    price: 229,
+    category: "Healthy",
+    image: "https://images.unsplash.com/photo-1550304943-4f24f54ddde9?w=500&auto=format&fit=crop&q=60",
+    is_available: true,
+    is_veg: false,
+  },
+
+  // 6. Bengal Flavors Kitchen (id: "rest-22f372d7-0f99-4b46-aa0f-bfe8eaae7999")
+  {
+    id: "item-bengal-biryani",
+    restaurant_id: "rest-22f372d7-0f99-4b46-aa0f-bfe8eaae7999",
+    name: "Kolkata Mutton Biryani",
+    description: "Famous Kolkata style dum biryani with soft potato, boiled egg, and succulent mutton.",
+    price: 369,
+    category: "Biryani",
+    image: "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=500&auto=format&fit=crop&q=60",
+    is_available: true,
+    is_veg: false,
+  },
+  {
+    id: "item-bengal-kosha",
+    restaurant_id: "rest-22f372d7-0f99-4b46-aa0f-bfe8eaae7999",
+    name: "Kosha Mangsho & Hot Luchi",
+    description: "Rich dark spiced goat mutton curry served with fluffy deep-fried Bengali bread.",
+    price: 349,
+    category: "North Indian",
+    image: "https://images.unsplash.com/photo-1588166524941-3bf61a9c41db?w=500&auto=format&fit=crop&q=60",
+    is_available: true,
+    is_veg: false,
+  },
+
+  // 7. Sanjeev Spice Villa (id: "rest-8dbc751d-ce42-45f7-9086-f2fd9854a334")
+  {
+    id: "item-sanjeev-kadai",
+    restaurant_id: "rest-8dbc751d-ce42-45f7-9086-f2fd9854a334",
+    name: "Kadai Paneer Special",
+    description: "Fresh cottage cheese cooked with bell peppers, crushed coriander and spicy kadai gravy.",
+    price: 279,
+    category: "North Indian",
+    image: "https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=500&auto=format&fit=crop&q=60",
+    is_available: true,
+    is_veg: true,
+  },
+
+  // 8. Subham Gourmet Kitchen (id: "rest-0c4a06cf-c7f9-436c-99b8-9d1c4ebe606c")
+  {
+    id: "item-subham-asian",
+    restaurant_id: "rest-0c4a06cf-c7f9-436c-99b8-9d1c4ebe606c",
+    name: "Spicy Miso Ramen Bowl",
+    description: "Rich savory miso broth, spring noodles, soft egg, bamboo shoots, and scallions.",
+    price: 289,
+    category: "Asian",
+    image: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=500&auto=format&fit=crop&q=60",
+    is_available: true,
+    is_veg: false,
+  },
+
+  // 9. The Spice Hub (id: "rest-2bc2479f-6bed-406e-81c6-47e74fb20e5c")
+  {
+    id: "item-spicehub-pasta",
+    restaurant_id: "rest-2bc2479f-6bed-406e-81c6-47e74fb20e5c",
+    name: "Classic Genovese Pesto Pasta",
+    description: "Fusilli pasta tossed in fresh sweet basil pesto, toasted pine nuts, and aged parmesan.",
+    price: 269,
+    category: "Pasta",
+    image: "https://images.unsplash.com/photo-1473093295043-cdd812d0e601?w=500&auto=format&fit=crop&q=60",
     is_available: true,
     is_veg: true,
   },
@@ -3316,23 +3528,36 @@ export function createGatewayApp(): express.Express {
         (i) =>
           i.restaurant_id === String(targetRest) ||
           i.restaurant_id === cleanTarget ||
-          i.restaurant_id === `rest-${cleanTarget}` ||
-          i.restaurant_id === "1"
+          i.restaurant_id === `rest-${cleanTarget}`
       );
     }
     if (search) {
       const q = search.toLowerCase();
       items = items.filter((i) => i.name.toLowerCase().includes(q) || (i.description && i.description.toLowerCase().includes(q)));
     }
-    if (categoryId) {
+    if (categoryId && categoryId !== "All") {
       const catObj = categories.find((c) => c.id === categoryId);
       const catName = catObj ? catObj.name.toLowerCase() : categoryId.toLowerCase();
       items = items.filter((i) => i.category.toLowerCase().includes(catName));
     }
 
     const formattedItems = items.map((item) => {
-      const matchedCat = categories.find((c) => c.name.toLowerCase() === item.category.toLowerCase());
+      const matchedCat = categories.find(
+        (c) => c.name.toLowerCase() === item.category.toLowerCase() || c.id === item.category
+      );
       const isAvail = Boolean(item.is_available ?? true);
+      const matchedRest = restaurants.find(
+        (r) =>
+          r.id === item.restaurant_id ||
+          r.id === `rest-${item.restaurant_id}` ||
+          `rest-${r.id}` === item.restaurant_id ||
+          r.owner_id === item.restaurant_id ||
+          r.user_id === item.restaurant_id ||
+          (r.id && item.restaurant_id && String(r.id).replace(/^rest-/, "") === String(item.restaurant_id).replace(/^rest-/, ""))
+      );
+      const restaurantName = matchedRest?.name || (item as any).restaurant_name || (item as any).restaurantName || "Orderly Gourmet Hub";
+      const restaurantRating = matchedRest?.rating || 4.9;
+
       return {
         ...item,
         is_available: isAvail,
@@ -3342,6 +3567,17 @@ export function createGatewayApp(): express.Express {
         category_id: matchedCat ? matchedCat.id : item.category,
         image_url: item.image,
         imageUrl: item.image,
+        restaurant_id: item.restaurant_id,
+        restaurantId: item.restaurant_id,
+        restaurantName: restaurantName,
+        restaurant_name: restaurantName,
+        restaurant: matchedRest
+          ? { id: matchedRest.id, name: matchedRest.name, rating: matchedRest.rating, image: matchedRest.image }
+          : { id: item.restaurant_id, name: restaurantName, rating: restaurantRating },
+        Restaurant: matchedRest
+          ? { id: matchedRest.id, name: matchedRest.name, rating: matchedRest.rating, image: matchedRest.image }
+          : { id: item.restaurant_id, name: restaurantName, rating: restaurantRating },
+        rating: restaurantRating,
       };
     });
 
