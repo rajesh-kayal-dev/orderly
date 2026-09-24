@@ -164,3 +164,19 @@ export function broadcastNewFeedback(feedback: any) {
   console.log(`[WebSocket] Broadcast NEW_FEEDBACK for order #${feedback.order_id} sentiment: ${feedback.sentiment}`);
 }
 
+export function broadcastNotification(notification: any) {
+  if (!ioInstance) return;
+  const target = notification.userId || notification.user_id || "all";
+  if (target === "all") {
+    ioInstance.emit("NOTIFICATION_RECEIVED", notification);
+  } else if (typeof target === "string" && target.startsWith("role_")) {
+    ioInstance.to(target).emit("NOTIFICATION_RECEIVED", notification);
+    ioInstance.emit("NOTIFICATION_RECEIVED", notification);
+  } else {
+    ioInstance.to(target).to(`user_${target}`).emit("NOTIFICATION_RECEIVED", notification);
+    ioInstance.emit("NOTIFICATION_RECEIVED", notification);
+  }
+  console.log(`[WebSocket] Broadcast NOTIFICATION_RECEIVED to ${target}`);
+}
+
+

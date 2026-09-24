@@ -13,6 +13,7 @@ import {
   broadcastOrderStatusUpdated,
   broadcastAvailableDelivery,
   broadcastNewFeedback,
+  broadcastNotification,
   getSocketIO,
 } from "./socket.js";
 
@@ -310,8 +311,28 @@ async function syncFromDatabase() {
         }
       }
       console.log(`[Neon DB Sync] Synced ${resFb.rows.length} feedbacks from Neon PostgreSQL.`);
+
+      const resAudit = await dbPool.query(`SELECT * FROM "AuditLog" ORDER BY created_at DESC LIMIT 200;`);
+      for (const row of resAudit.rows) {
+        if (!auditLogs.some((a) => a.id === row.id)) {
+          auditLogs.push({
+            id: row.id,
+            actor_id: row.actor_id,
+            actor_email: row.actor_email || undefined,
+            actor_role: row.actor_role || undefined,
+            action: row.action,
+            target_type: row.target_type,
+            target_id: row.target_id,
+            target_name: row.target_name || undefined,
+            reason: row.reason || undefined,
+            metadata: typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata || undefined,
+            created_at: row.created_at?.toISOString ? row.created_at.toISOString() : String(row.created_at),
+          });
+        }
+      }
+      console.log(`[Neon DB Sync] Synced ${resAudit.rows.length} audit logs from Neon PostgreSQL.`);
     } catch (fbErr: any) {
-      console.warn("[Neon DB Feedback Sync] Notice:", fbErr.message);
+      console.warn("[Neon DB Feedback & AuditLog Sync] Notice:", fbErr.message);
     }
 
     // 4. Ensure MenuCategory, MenuItem, and Order tables exist and sync all records
@@ -436,8 +457,83 @@ async function syncFromDatabase() {
         }
       }
       console.log(`[Neon DB Sync] Synced ${resOrders.rows.length} orders from Neon PostgreSQL.`);
+
+      // Sync Notifications
+      await dbPool.query(`
+        CREATE TABLE IF NOT EXISTS "Notification" (
+          id VARCHAR(64) PRIMARY KEY,
+          user_id VARCHAR(64) NOT NULL,
+          order_id VARCHAR(64),
+          title VARCHAR(255) NOT NULL,
+          message TEXT NOT NULL,
+          read BOOLEAN DEFAULT false,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+      `);
+      const resNotifs = await dbPool.query(`SELECT * FROM "Notification" ORDER BY created_at DESC LIMIT 200;`);
+      for (const row of resNotifs.rows) {
+        if (!notifications.some((n) => n.id === row.id)) {
+          notifications.push({
+            id: row.id,
+            userId: row.user_id,
+            orderId: row.order_id,
+            title: row.title,
+            message: row.message,
+            read: Boolean(row.read),
+            createdAt: row.created_at?.toISOString ? row.created_at.toISOString() : String(row.created_at),
+          });
+        }
+      }
+      console.log(`[Neon DB Sync] Synced ${resNotifs.rows.length} notifications from Neon PostgreSQL.`);
+
+      // Sync Delivery Partners
+      await dbPool.query(`
+        CREATE TABLE IF NOT EXISTS "DeliveryPartner" (
+          id VARCHAR(64) PRIMARY KEY,
+          user_id VARCHAR(64) NOT NULL UNIQUE,
+          full_name VARCHAR(255),
+          phone VARCHAR(64),
+          area VARCHAR(255),
+          vehicle_type VARCHAR(64),
+          vehicle_number VARCHAR(64),
+          rating NUMERIC(3, 2) DEFAULT 4.9,
+          deliveries VARCHAR(64) DEFAULT '0',
+          is_available BOOLEAN DEFAULT false,
+          status VARCHAR(64) DEFAULT 'PENDING_APPROVAL',
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+      `);
+      const resDps = await dbPool.query(`SELECT * FROM "DeliveryPartner";`);
+      for (const row of resDps.rows) {
+        const existIdx = deliveryPartners.findIndex((d) => d.userId === row.user_id || d.id === row.id);
+        const dpObj = {
+          id: row.id,
+          userId: row.user_id,
+          fullName: row.full_name || "Delivery Partner",
+          name: row.full_name || "Delivery Partner",
+          phone: row.phone || null,
+          area: row.area || "Indore",
+          deliveries: row.deliveries || "0",
+          vehicle_type: row.vehicle_type || "Motorcycle",
+          vehicle_number: row.vehicle_number || "MP-09-AB-1234",
+          is_available: Boolean(row.is_available),
+          rating: Number(row.rating || 4.9),
+          status: row.status || "PENDING_APPROVAL",
+          is_active: row.status === "ACTIVE" || row.status === "active",
+          image: "",
+          current_location: { lat: 22.7196, lng: 75.8577 },
+          created_at: row.created_at?.toISOString ? row.created_at.toISOString() : String(row.created_at),
+        };
+        if (existIdx >= 0) {
+          deliveryPartners[existIdx] = { ...deliveryPartners[existIdx], ...dpObj };
+        } else {
+          deliveryPartners.push(dpObj);
+        }
+      }
+      console.log(`[Neon DB Sync] Synced ${resDps.rows.length} delivery partners from Neon PostgreSQL.`);
     } catch (mErr: any) {
-      console.warn("[Neon DB Menu & Order Sync] Notice:", mErr.message);
+      console.warn("[Neon DB Menu, Order & Notif Sync] Notice:", mErr.message);
     }
   } catch (err: any) {
     console.warn(`[Neon DB Sync] Notice: ${err.message}`);
@@ -670,7 +766,12 @@ export async function persistOrderToDb(order: OrderRecord) {
   }
 }
 
-export async function updateOrderStatusInDb(orderId: string, status: string, deliveryPartnerId?: string, paymentStatus?: string) {
+export async function updateOrderStatusInDb(
+  orderId: string,
+  status: string,
+  deliveryPartnerId?: string | null,
+  paymentStatus?: string | null
+) {
   try {
     const fields: string[] = ["status = $1", "updated_at = NOW()"];
     const params: any[] = [status];
@@ -687,6 +788,143 @@ export async function updateOrderStatusInDb(orderId: string, status: string, del
     await dbPool.query(`UPDATE "Order" SET ${fields.join(", ")} WHERE id = $${idx};`, params);
   } catch (err: any) {
     console.warn("[DB Order Status Update] Notice:", err.message);
+  }
+}
+
+export async function persistNotificationToDb(notif: any) {
+  try {
+    await dbPool.query(
+      `INSERT INTO "Notification" (id, user_id, order_id, title, message, read, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       ON CONFLICT (id) DO UPDATE SET read = EXCLUDED.read;`,
+      [notif.id, notif.userId || notif.user_id || "all", notif.orderId || notif.order_id || null, notif.title || "Notification", notif.message || "", Boolean(notif.read)]
+    );
+  } catch (err: any) {
+    console.warn("[DB Notification Persist] Notice:", err.message);
+  }
+}
+
+export async function markNotificationReadInDb(notifId?: string, userId?: string) {
+  try {
+    if (notifId) {
+      await dbPool.query(`UPDATE "Notification" SET read = true WHERE id = $1;`, [notifId]);
+    } else if (userId) {
+      await dbPool.query(`UPDATE "Notification" SET read = true WHERE user_id = $1 OR user_id = 'all' OR user_id = 'role_admin' OR user_id = 'role_restaurant' OR user_id = 'role_delivery';`, [userId]);
+    }
+  } catch (err: any) {
+    console.warn("[DB Notification Read Update] Notice:", err.message);
+  }
+}
+
+export async function deleteNotificationFromDb(userId: string) {
+  try {
+    await dbPool.query(`DELETE FROM "Notification" WHERE user_id = $1 OR user_id = 'all' OR user_id = $2;`, [userId, `rest-${userId}`]);
+  } catch (err: any) {
+    console.warn("[DB Notification Delete] Notice:", err.message);
+  }
+}
+
+export async function persistDeliveryPartnerToDb(dp: any) {
+  try {
+    await dbPool.query(
+      `INSERT INTO "DeliveryPartner" (
+        id, user_id, full_name, phone, area, vehicle_type, vehicle_number, rating, deliveries, is_available, status, created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW()
+      )
+      ON CONFLICT (user_id) DO UPDATE SET
+        full_name = EXCLUDED.full_name,
+        phone = EXCLUDED.phone,
+        area = EXCLUDED.area,
+        vehicle_type = EXCLUDED.vehicle_type,
+        vehicle_number = EXCLUDED.vehicle_number,
+        rating = EXCLUDED.rating,
+        deliveries = EXCLUDED.deliveries,
+        is_available = EXCLUDED.is_available,
+        status = EXCLUDED.status,
+        updated_at = NOW();`,
+      [
+        dp.id || `dp-${dp.userId}`,
+        dp.userId,
+        dp.fullName || dp.name || "Delivery Partner",
+        dp.phone || null,
+        dp.area || "Indore",
+        dp.vehicle_type || "Motorcycle",
+        dp.vehicle_number || "MP-09-AB-1234",
+        Number(dp.rating || 4.9),
+        String(dp.deliveries || "0"),
+        Boolean(dp.is_available),
+        dp.status || "PENDING_APPROVAL",
+      ]
+    );
+  } catch (err: any) {
+    console.warn("[DB DeliveryPartner Persist] Notice:", err.message);
+  }
+}
+
+export async function persistRestaurantToDb(rest: RestaurantRecord) {
+  try {
+    await dbPool.query(
+      `INSERT INTO "Restaurant" (
+        id, user_id, name, description, address, image_url, rating, is_active, opens_at, closes_at, status, deleted_at, created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW()
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        description = EXCLUDED.description,
+        address = EXCLUDED.address,
+        image_url = EXCLUDED.image_url,
+        rating = EXCLUDED.rating,
+        is_active = EXCLUDED.is_active,
+        opens_at = EXCLUDED.opens_at,
+        closes_at = EXCLUDED.closes_at,
+        status = EXCLUDED.status,
+        deleted_at = EXCLUDED.deleted_at,
+        updated_at = NOW();`,
+      [
+        rest.id,
+        rest.user_id || rest.owner_id || null,
+        rest.name,
+        rest.description || "",
+        rest.address || "",
+        rest.image || rest.image_url || "",
+        Number(rest.rating || 4.8),
+        Boolean(rest.is_active),
+        rest.opens_at || "10:00 AM",
+        rest.closes_at || "11:00 PM",
+        rest.status || "ACTIVE",
+        rest.deleted_at || null,
+      ]
+    );
+  } catch (err: any) {
+    console.warn("[DB Restaurant Persist] Notice:", err.message);
+  }
+}
+
+export async function createAndBroadcastNotification(notif: any) {
+  if (!notif.id) {
+    notif.id = `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  }
+  if (!notif.createdAt) {
+    notif.createdAt = new Date().toISOString();
+  }
+  notifications.unshift(notif);
+  await persistNotificationToDb(notif);
+  broadcastNotification(notif);
+
+  const io = getSocketIO();
+  if (io) {
+    const target = notif.userId || notif.user_id || "all";
+    if (target === "all") {
+      io.emit("NEW_NOTIFICATION", notif);
+    } else if (typeof target === "string" && target.startsWith("role_")) {
+      io.to(target).emit("NEW_NOTIFICATION", notif);
+      io.emit("NEW_NOTIFICATION", notif);
+    } else {
+      io.to(target).to(`user_${target}`).emit("NEW_NOTIFICATION", notif);
+      io.emit("NEW_NOTIFICATION", notif);
+    }
   }
 }
 
@@ -1379,7 +1617,7 @@ export function createGatewayApp(): express.Express {
         read: false,
         createdAt: new Date().toISOString(),
       };
-      notifications.unshift(adminNotif);
+      await createAndBroadcastNotification(adminNotif);
 
       const io = getSocketIO();
       if (io) {
@@ -1395,7 +1633,6 @@ export function createGatewayApp(): express.Express {
           created_at: newUser.created_at,
         };
         io.to("role_admin").emit("NEW_USER_REGISTERED", custPayload);
-        io.to("role_admin").emit("NEW_NOTIFICATION", adminNotif);
         io.emit("NEW_USER_REGISTERED", custPayload);
       }
     } else if (userRole === "restaurant") {
@@ -1454,30 +1691,7 @@ export function createGatewayApp(): express.Express {
       profileObj = newRest;
 
       // Save to Neon PostgreSQL Restaurant table
-      try {
-        await dbPool.query(
-          `INSERT INTO "Restaurant" (id, user_id, name, description, address, image_url, rating, is_active, status, opens_at, closes_at, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, false, 'PENDING_APPROVAL', '10:00 AM', '11:00 PM', NOW(), NOW())
-           ON CONFLICT (id) DO UPDATE SET
-             name = EXCLUDED.name,
-             address = EXCLUDED.address,
-             description = EXCLUDED.description,
-             is_active = false,
-             status = 'PENDING_APPROVAL',
-             updated_at = NOW();`,
-          [
-            `rest-${newUser.id}`,
-            newUser.id,
-            restName,
-            restDesc,
-            restAddress,
-            newRest.image_url,
-            4.9,
-          ]
-        );
-      } catch (dbRestErr: any) {
-        console.warn("[Register Restaurant DB Persist] Notice:", dbRestErr.message);
-      }
+      await persistRestaurantToDb(newRest);
 
       // Notify Admin
       const adminNotif = {
@@ -1491,7 +1705,7 @@ export function createGatewayApp(): express.Express {
         read: false,
         createdAt: new Date().toISOString(),
       };
-      notifications.unshift(adminNotif);
+      await createAndBroadcastNotification(adminNotif);
 
       const io = getSocketIO();
       if (io) {
@@ -1514,7 +1728,6 @@ export function createGatewayApp(): express.Express {
           timestamp: new Date().toISOString(),
         });
         io.to("role_admin").emit("NEW_RESTAURANT_REGISTERED", restPayload);
-        io.to("role_admin").emit("NEW_NOTIFICATION", adminNotif);
         io.emit("NEW_RESTAURANT_REGISTERED", restPayload);
       }
     } else if (userRole === "delivery_partner") {
@@ -1545,6 +1758,8 @@ export function createGatewayApp(): express.Express {
       }
       profileObj = dpObj;
 
+      await persistDeliveryPartnerToDb(dpObj);
+
       const adminNotif = {
         id: `notif-${Date.now()}`,
         userId: "role_admin",
@@ -1556,7 +1771,7 @@ export function createGatewayApp(): express.Express {
         read: false,
         createdAt: new Date().toISOString(),
       };
-      notifications.unshift(adminNotif);
+      await createAndBroadcastNotification(adminNotif);
 
       const io = getSocketIO();
       if (io) {
@@ -1569,7 +1784,6 @@ export function createGatewayApp(): express.Express {
           timestamp: new Date().toISOString(),
         });
         io.to("role_admin").emit("NEW_DELIVERY_PARTNER_REGISTERED", dpObj);
-        io.to("role_admin").emit("NEW_NOTIFICATION", adminNotif);
         io.emit("NEW_DELIVERY_PARTNER_REGISTERED", dpObj);
       }
     }
@@ -2579,7 +2793,7 @@ export function createGatewayApp(): express.Express {
     return void res.json({ success: true, data: formattedList, total: formattedList.length });
   });
 
-  app.post("/restaurants", (req, res) => {
+  app.post("/restaurants", async (req, res) => {
     const authHeader = req.headers.authorization;
     let authUser: any = null;
     if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -2695,6 +2909,8 @@ export function createGatewayApp(): express.Express {
     } else {
       restaurants.unshift(newRecord);
     }
+
+    await persistRestaurantToDb(newRecord);
 
     const formatted = formatRestaurantOutput(newRecord);
 
@@ -3642,7 +3858,7 @@ export function createGatewayApp(): express.Express {
         carts[userId].restaurantId = null;
       }
 
-      notifications.unshift({
+      await createAndBroadcastNotification({
         id: `notif-${Date.now()}-cust`,
         userId,
         orderId: newOrder.id,
@@ -3653,7 +3869,7 @@ export function createGatewayApp(): express.Express {
       });
 
       // Notify Restaurant
-      notifications.unshift({
+      await createAndBroadcastNotification({
         id: `notif-${Date.now()}-rest`,
         userId: newOrder.restaurant_id,
         orderId: newOrder.id,
@@ -3662,7 +3878,7 @@ export function createGatewayApp(): express.Express {
         read: false,
         createdAt: new Date().toISOString(),
       });
-      notifications.unshift({
+      await createAndBroadcastNotification({
         id: `notif-${Date.now()}-role-rest`,
         userId: "role_restaurant",
         orderId: newOrder.id,
@@ -3673,7 +3889,7 @@ export function createGatewayApp(): express.Express {
       });
 
       // Notify Admin
-      notifications.unshift({
+      await createAndBroadcastNotification({
         id: `notif-${Date.now()}-admin`,
         userId: "role_admin",
         orderId: newOrder.id,
@@ -3854,13 +4070,14 @@ export function createGatewayApp(): express.Express {
     order.status = "assigned";
     order.version = (order.version || 1) + 1;
     order.updated_at = new Date().toISOString();
+    updateOrderStatusInDb(order.id, "assigned", authUser.id);
 
     broadcastOrderStatusUpdated(order.id, "assigned", order);
 
     return void res.json({ success: true, message: "Delivery accepted and assigned", data: order });
   });
 
-  app.put(["/orders/:id/status", "/restaurant/orders/:id/status"], authenticate, enforceLiveRestaurantActive, (req, res) => {
+  app.put(["/orders/:id/status", "/restaurant/orders/:id/status"], authenticate, enforceLiveRestaurantActive, async (req, res) => {
     const { status: newStatus } = req.body;
     const rawId = String(req.params.id || "");
     const orderId = rawId.replace("del-", "");
@@ -3873,10 +4090,11 @@ export function createGatewayApp(): express.Express {
     }
     order.version = (order.version || 1) + 1;
     order.updated_at = new Date().toISOString();
+    updateOrderStatusInDb(order.id, newStatus, order.delivery_partner_id, order.payment_status);
 
     if (newStatus === "ready" || newStatus === "ready_for_pickup") {
       // Create notification for delivery partners
-      notifications.unshift({
+      await createAndBroadcastNotification({
         id: `notif-${Date.now()}-del`,
         userId: "role_delivery",
         orderId: order.id,
@@ -3888,7 +4106,7 @@ export function createGatewayApp(): express.Express {
 
       // Also create notification for customer
       if (order.customer_id) {
-        notifications.unshift({
+        await createAndBroadcastNotification({
           id: `notif-${Date.now()}-cust`,
           userId: order.customer_id,
           orderId: order.id,
@@ -3900,7 +4118,7 @@ export function createGatewayApp(): express.Express {
       }
     } else if (newStatus === "picked_up" || newStatus === "in_transit") {
       if (order.customer_id) {
-        notifications.unshift({
+        await createAndBroadcastNotification({
           id: `notif-${Date.now()}-cust`,
           userId: order.customer_id,
           orderId: order.id,
@@ -3912,7 +4130,7 @@ export function createGatewayApp(): express.Express {
       }
     } else if (newStatus === "delivered" || newStatus === "completed") {
       if (order.customer_id) {
-        notifications.unshift({
+        await createAndBroadcastNotification({
           id: `notif-${Date.now()}-cust`,
           userId: order.customer_id,
           orderId: order.id,
@@ -4189,7 +4407,7 @@ export function createGatewayApp(): express.Express {
       "/delivery-partner/availability",
     ],
     authenticate,
-    (req, res) => {
+    async (req, res) => {
       const authUser = (req as any).user;
       const partner = deliveryPartners.find((d) => d.userId === authUser.id) || deliveryPartners[0];
       if (partner) {
@@ -4201,6 +4419,8 @@ export function createGatewayApp(): express.Express {
             : true;
         partner.is_available = nextAvail;
         (partner as any).is_online = nextAvail;
+
+        await persistDeliveryPartnerToDb(partner);
 
         const io = getSocketIO();
         if (io) {
@@ -4403,7 +4623,7 @@ export function createGatewayApp(): express.Express {
     });
   });
 
-  app.post("/payments/verify", authenticate, (req, res) => {
+  app.post("/payments/verify", authenticate, async (req, res) => {
     const user = (req as any).user;
     const userId = user?.id;
     const { orderId } = req.body;
@@ -4414,6 +4634,7 @@ export function createGatewayApp(): express.Express {
       order.status = "placed";
       order.version = (order.version || 1) + 1;
       order.updated_at = new Date().toISOString();
+      updateOrderStatusInDb(order.id, "placed", undefined, "paid");
 
       // Clear cart
       if (userId && carts[userId]) {
@@ -4421,7 +4642,7 @@ export function createGatewayApp(): express.Express {
         carts[userId].restaurantId = null;
       }
 
-      notifications.unshift({
+      await createAndBroadcastNotification({
         id: `notif-${Date.now()}-cust`,
         userId: order.customer_id || userId,
         orderId: order.id,
@@ -4432,7 +4653,7 @@ export function createGatewayApp(): express.Express {
       });
 
       // Notify Restaurant
-      notifications.unshift({
+      await createAndBroadcastNotification({
         id: `notif-${Date.now()}-rest`,
         userId: order.restaurant_id,
         orderId: order.id,
@@ -4441,7 +4662,7 @@ export function createGatewayApp(): express.Express {
         read: false,
         createdAt: new Date().toISOString(),
       });
-      notifications.unshift({
+      await createAndBroadcastNotification({
         id: `notif-${Date.now()}-role-rest`,
         userId: "role_restaurant",
         orderId: order.id,
@@ -4452,7 +4673,7 @@ export function createGatewayApp(): express.Express {
       });
 
       // Notify Admin
-      notifications.unshift({
+      await createAndBroadcastNotification({
         id: `notif-${Date.now()}-admin`,
         userId: "role_admin",
         orderId: order.id,
@@ -4558,13 +4779,15 @@ export function createGatewayApp(): express.Express {
     return void res.json({ success: true, data: userNotifs });
   });
 
-  app.patch("/notifications/:id/read", authenticate, (req, res) => {
-    const notif = notifications.find((n) => n.id === req.params.id);
+  app.patch("/notifications/:id/read", authenticate, async (req, res) => {
+    const notifId = String(req.params.id || "");
+    const notif = notifications.find((n) => n.id === notifId);
     if (notif) notif.read = true;
+    await markNotificationReadInDb(notifId);
     return void res.json({ success: true });
   });
 
-  app.post("/notifications/read-all", authenticate, (req, res) => {
+  app.post("/notifications/read-all", authenticate, async (req, res) => {
     const authUser = (req as any).user;
     const userId = authUser?.id || "";
     const cleanUserId = userId.replace(/^(rest-|dp-|usr-)/, "");
@@ -4584,10 +4807,11 @@ export function createGatewayApp(): express.Express {
         n.read = true;
       }
     });
+    await markNotificationReadInDb(undefined, userId);
     return void res.json({ success: true });
   });
 
-  app.delete("/notifications", authenticate, (req, res) => {
+  app.delete("/notifications", authenticate, async (req, res) => {
     const authUser = (req as any).user;
     const userId = authUser?.id || "";
     const cleanUserId = userId.replace(/^(rest-|dp-|usr-)/, "");
@@ -4606,6 +4830,7 @@ export function createGatewayApp(): express.Express {
         notifications.splice(i, 1);
       }
     }
+    await deleteNotificationFromDb(userId);
     return void res.json({ success: true, message: "Notifications cleared" });
   });
 
@@ -4794,6 +5019,7 @@ export function createGatewayApp(): express.Express {
         rest.is_active = true;
         rest.is_accepting_orders = true;
         rest.status = "ACTIVE";
+        await persistRestaurantToDb(rest);
       }
       try {
         await dbPool.query(
@@ -4813,13 +5039,9 @@ export function createGatewayApp(): express.Express {
         read: false,
         createdAt: new Date().toISOString(),
       };
-      notifications.unshift(approveNotif);
+      await createAndBroadcastNotification(approveNotif);
 
       if (io) {
-        io.to(user.id).emit("NEW_NOTIFICATION", approveNotif);
-        if (rest?.id) io.to(`restaurant_${rest.id}`).emit("NEW_NOTIFICATION", approveNotif);
-        io.to("role_restaurant").emit("NEW_NOTIFICATION", approveNotif);
-        
         const restPayload = {
           id: rest?.id || user.id,
           name: restName,
@@ -4841,13 +5063,15 @@ export function createGatewayApp(): express.Express {
 
     // If delivery partner account, activate and broadcast status
     if (user.role === "delivery_partner" || (user.role as any) === "driver") {
+      let dpToSave: any = null;
       const existingDp = deliveryPartners.find((dp) => dp.userId === user.id || dp.id === user.id);
       if (existingDp) {
         existingDp.is_available = true;
         existingDp.status = "ACTIVE";
         existingDp.is_active = true;
+        dpToSave = existingDp;
       } else {
-        deliveryPartners.push({
+        const newDp = {
           id: `dp-${user.id}`,
           userId: user.id,
           fullName: user.full_name,
@@ -4863,15 +5087,14 @@ export function createGatewayApp(): express.Express {
           rating: 4.9,
           image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60",
           current_location: { lat: 22.7196, lng: 75.8577 },
-        });
+        };
+        deliveryPartners.push(newDp);
+        dpToSave = newDp;
       }
 
-      try {
-        await dbPool.query(
-          `UPDATE "DeliveryPartner" SET status = 'ACTIVE', is_available = true WHERE user_id = $1 OR id = $2;`,
-          [user.id, `dp-${user.id}`]
-        );
-      } catch {}
+      if (dpToSave) {
+        await persistDeliveryPartnerToDb(dpToSave);
+      }
 
       const approveNotif = {
         id: `notif-${Date.now()}`,
@@ -4884,11 +5107,9 @@ export function createGatewayApp(): express.Express {
         read: false,
         createdAt: new Date().toISOString(),
       };
-      notifications.unshift(approveNotif);
+      await createAndBroadcastNotification(approveNotif);
 
       if (io) {
-        io.to(user.id).emit("NEW_NOTIFICATION", approveNotif);
-        io.to("role_delivery").emit("NEW_NOTIFICATION", approveNotif);
         const dpPayload = {
           id: user.id,
           userId: user.id,
@@ -5278,14 +5499,10 @@ export function createGatewayApp(): express.Express {
         read: false,
         createdAt: new Date().toISOString(),
       };
-      notifications.unshift(approveNotif);
+      await createAndBroadcastNotification(approveNotif);
 
       const io = getSocketIO();
       if (io) {
-        if (targetOwnerId) io.to(targetOwnerId).emit("NEW_NOTIFICATION", approveNotif);
-        io.to(`restaurant_${rest.id}`).emit("NEW_NOTIFICATION", approveNotif);
-        io.to("role_restaurant").emit("NEW_NOTIFICATION", approveNotif);
-        
         const restPayload = {
           id: rest.id,
           name: rest.name,
@@ -5314,12 +5531,9 @@ export function createGatewayApp(): express.Express {
         read: false,
         createdAt: new Date().toISOString(),
       };
-      notifications.unshift(alertNotif);
+      await createAndBroadcastNotification(alertNotif);
       const io = getSocketIO();
       if (io) {
-        if (targetOwnerId) io.to(targetOwnerId).emit("NEW_NOTIFICATION", alertNotif);
-        io.to(`restaurant_${rest.id}`).emit("NEW_NOTIFICATION", alertNotif);
-        io.to("role_restaurant").emit("NEW_NOTIFICATION", alertNotif);
         io.emit("RESTAURANT_STATUS_UPDATED", { restaurantId: rest.id, is_open: false, status: targetStatus });
       }
     }
@@ -5630,12 +5844,10 @@ export function createGatewayApp(): express.Express {
         read: false,
         createdAt: new Date().toISOString(),
       };
-      notifications.unshift(approveNotif);
+      await createAndBroadcastNotification(approveNotif);
 
       const io = getSocketIO();
       if (io) {
-        io.to(driverUserId).emit("NEW_NOTIFICATION", approveNotif);
-        io.to("role_delivery").emit("NEW_NOTIFICATION", approveNotif);
         const dpPayload = {
           id: driverUserId,
           userId: driverUserId,
@@ -5672,12 +5884,7 @@ export function createGatewayApp(): express.Express {
         read: false,
         createdAt: new Date().toISOString(),
       };
-      notifications.unshift(alertNotif);
-      const io = getSocketIO();
-      if (io) {
-        io.to(driverUserId).emit("NEW_NOTIFICATION", alertNotif);
-        io.to("role_delivery").emit("NEW_NOTIFICATION", alertNotif);
-      }
+      await createAndBroadcastNotification(alertNotif);
     }
 
     const io = getSocketIO();
@@ -5945,7 +6152,7 @@ export function createGatewayApp(): express.Express {
       created_at: feedback.created_at,
     });
 
-    notifications.unshift({
+    await createAndBroadcastNotification({
       id: `notif-${Date.now()}-fb`,
       userId: `restaurant_${restaurantId}`,
       orderId: order.id,
