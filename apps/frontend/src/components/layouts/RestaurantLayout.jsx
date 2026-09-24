@@ -41,6 +41,7 @@ export default function RestaurantLayout() {
 
   const [isRestaurantOpen, setIsRestaurantOpen] = useState(Boolean(profile?.is_active ?? profile?.is_open ?? true));
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [kitchenActiveCount, setKitchenActiveCount] = useState(0);
 
   // Notification Popover State
   const [showNotifications, setShowNotifications] = useState(false);
@@ -50,12 +51,26 @@ export default function RestaurantLayout() {
   // Dynamic Date Display
   const [currentDateString, setCurrentDateString] = useState('');
 
+  const fetchKitchenActiveCount = async () => {
+    if (!token) return;
+    try {
+      const res = await axios.get('/orders/restaurant/me');
+      if (res.data?.success && res.data?.counts) {
+        const c = res.data.counts;
+        const total = (c.pending || 0) + (c.accepted || 0) + (c.preparing || 0) + (c.ready || 0);
+        setKitchenActiveCount(total);
+      }
+    } catch (e) {
+      // silent
+    }
+  };
+
   useEffect(() => {
     const d = new Date();
     setCurrentDateString(d.toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-'));
   }, []);
 
-  // Sync restaurant profile status on mount
+  // Sync restaurant profile status and active orders on mount
   useEffect(() => {
     const fetchMyRestaurantStatus = async () => {
       if (!token) return;
@@ -77,6 +92,7 @@ export default function RestaurantLayout() {
     };
 
     fetchMyRestaurantStatus();
+    fetchKitchenActiveCount();
   }, [token]);
 
   useEffect(() => {
@@ -160,6 +176,7 @@ export default function RestaurantLayout() {
       };
 
       const handleNewOrder = (data) => {
+        fetchKitchenActiveCount();
         const orderNum = data.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'REC';
         const newNotif = {
           id: Date.now(),
@@ -179,6 +196,7 @@ export default function RestaurantLayout() {
       };
 
       const handleStatusUpdate = (data) => {
+        fetchKitchenActiveCount();
         const orderNum = data.orderId ? data.orderId.slice(0, 8).toUpperCase() : '';
         const newNotif = {
           id: Date.now(),
@@ -201,11 +219,16 @@ export default function RestaurantLayout() {
       socket.on('RESTAURANT_APPROVED', handleRestaurantApproved);
       socket.on('NEW_ORDER', handleNewOrder);
       socket.on('ORDER_STATUS_UPDATED', handleStatusUpdate);
+      socket.on('ORDER_READY_FOR_PICKUP', handleStatusUpdate);
+      socket.on('DRIVER_ASSIGNED', handleStatusUpdate);
+
       return () => {
         socket.off('NEW_NOTIFICATION', handleNewNotification);
         socket.off('RESTAURANT_APPROVED', handleRestaurantApproved);
         socket.off('NEW_ORDER', handleNewOrder);
         socket.off('ORDER_STATUS_UPDATED', handleStatusUpdate);
+        socket.off('ORDER_READY_FOR_PICKUP', handleStatusUpdate);
+        socket.off('DRIVER_ASSIGNED', handleStatusUpdate);
       };
     }
   }, [user, profile, token]);
@@ -279,7 +302,7 @@ export default function RestaurantLayout() {
 
   const navItems = [
     { label: 'Dashboard', path: '/restaurant', icon: <AppstoreOutlined /> },
-    { label: 'Orders', path: '/restaurant/orders', icon: <ShoppingOutlined />, badge: activeCount },
+    { label: 'Orders', path: '/restaurant/orders', icon: <ShoppingOutlined />, badge: kitchenActiveCount > 0 ? kitchenActiveCount : undefined },
     { label: 'Menu Catalog', path: '/restaurant/menu', icon: <UnorderedListOutlined /> },
     { label: 'Analytics', path: '/restaurant/summary', icon: <BarChartOutlined /> },
     { label: 'Reviews', path: '/restaurant/reviews', icon: <StarOutlined /> },

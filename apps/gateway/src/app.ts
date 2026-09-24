@@ -5056,11 +5056,11 @@ export function createGatewayApp(): express.Express {
     
     const userNotifs = notifications.filter((n) => {
       if (!n) return false;
+      if (role === "admin") return true;
       if (n.userId === "all") return true;
       if (n.userId === userId) return true;
       if (n.userId === `rest-${userId}` || n.userId === `dp-${userId}`) return true;
       if (userId && (n.userId === cleanUserId || n.userId === `usr-${cleanUserId}`)) return true;
-      if (role === "admin" && (n.userId === "role_admin" || n.userId === "admin")) return true;
       if (role === "restaurant" && (n.userId === "role_restaurant" || (n.role === "restaurant" && n.userId === userId) || n.userId === `rest-${userId}`)) return true;
       if (role === "delivery_partner" && (n.userId === "role_delivery" || (n.role === "delivery_partner" && n.userId === userId) || n.userId === `dp-${userId}`)) return true;
       if (role === "customer" && (n.userId === "role_customer" || (n.role === "customer" && n.userId === userId))) return true;
@@ -5089,12 +5089,12 @@ export function createGatewayApp(): express.Express {
     
     notifications.forEach((n) => {
       if (
+        role === "admin" ||
         n.userId === userId ||
         n.userId === "all" ||
         n.userId === `rest-${userId}` ||
         n.userId === `dp-${userId}` ||
         n.userId === cleanUserId ||
-        (role === "admin" && (n.userId === "role_admin" || n.userId === "admin")) ||
         (role === "restaurant" && (n.userId === "role_restaurant" || n.userId === `rest-${userId}`)) ||
         (role === "delivery_partner" && (n.userId === "role_delivery" || n.userId === `dp-${userId}`))
       ) {
@@ -5114,6 +5114,7 @@ export function createGatewayApp(): express.Express {
     for (let i = notifications.length - 1; i >= 0; i--) {
       const n = notifications[i];
       if (
+        role === "admin" ||
         n.userId === userId ||
         n.userId === `rest-${userId}` ||
         n.userId === `dp-${userId}` ||
@@ -5140,7 +5141,8 @@ export function createGatewayApp(): express.Express {
       pending: orders.filter((o) => o.status === "pending" || o.status === "placed").length,
       accepted: orders.filter((o) => o.status === "accepted").length,
       preparing: orders.filter((o) => o.status === "preparing").length,
-      picked_up: orders.filter((o) => o.status === "picked_up" || o.status === "in_transit" || o.status === "assigned" || o.status === "out_for_delivery").length,
+      ready: orders.filter((o) => o.status === "ready" || o.status === "ready_for_pickup").length,
+      picked_up: orders.filter((o) => ["assigned", "arrived", "picked_up", "out_for_delivery", "in_transit", "delivering", "on_the_way"].includes(o.status)).length,
       delivered: orders.filter((o) => o.status === "delivered" || o.status === "completed").length,
       cancelled: orders.filter((o) => o.status === "cancelled").length,
     };
@@ -5150,9 +5152,15 @@ export function createGatewayApp(): express.Express {
     if (status && status !== "all") {
       if (status === "pending") {
         filtered = filtered.filter((o) => o.status === "pending" || o.status === "placed");
-      } else if (status === "picked_up") {
-        filtered = filtered.filter((o) => o.status === "picked_up" || o.status === "in_transit" || o.status === "assigned" || o.status === "out_for_delivery");
-      } else if (status === "delivered") {
+      } else if (status === "accepted") {
+        filtered = filtered.filter((o) => o.status === "accepted");
+      } else if (status === "preparing") {
+        filtered = filtered.filter((o) => o.status === "preparing");
+      } else if (status === "ready" || status === "ready_for_pickup") {
+        filtered = filtered.filter((o) => o.status === "ready" || o.status === "ready_for_pickup");
+      } else if (status === "picked_up" || status === "on_the_way" || status === "out_for_delivery") {
+        filtered = filtered.filter((o) => ["assigned", "arrived", "picked_up", "out_for_delivery", "in_transit", "delivering", "on_the_way"].includes(o.status));
+      } else if (status === "delivered" || status === "completed") {
         filtered = filtered.filter((o) => o.status === "delivered" || o.status === "completed");
       } else {
         filtered = filtered.filter((o) => o.status === status);

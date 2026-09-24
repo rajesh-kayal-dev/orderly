@@ -40,7 +40,33 @@ export default function DeliveryLayout() {
   const [currentDateString, setCurrentDateString] = useState('10-09-2026');
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationsList, setNotificationsList] = useState([]);
+  const [deliveryActiveCount, setDeliveryActiveCount] = useState(0);
   const notificationRef = useRef(null);
+
+  const fetchDeliveryActiveCount = async () => {
+    if (!token) return;
+    try {
+      const [availRes, myRes] = await Promise.allSettled([
+        axios.get('/orders/deliveries/available'),
+        axios.get('/orders/driver/me')
+      ]);
+
+      let availCount = 0;
+      let activeMyCount = 0;
+
+      if (availRes.status === 'fulfilled' && availRes.value.data?.success) {
+        availCount = (availRes.value.data.data || []).length;
+      }
+      if (myRes.status === 'fulfilled' && myRes.value.data?.success) {
+        const myOrders = myRes.value.data.data || [];
+        activeMyCount = myOrders.filter(o => !['delivered', 'completed', 'cancelled'].includes(o.status)).length;
+      }
+
+      setDeliveryActiveCount(isOnline ? availCount + activeMyCount : activeMyCount);
+    } catch (e) {
+      // silent
+    }
+  };
 
   useEffect(() => {
     const d = new Date();
@@ -58,7 +84,7 @@ export default function DeliveryLayout() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Socket notification listener — re-runs when online status changes
+  // Socket notification listener & live count sync
   useEffect(() => {
     if (!user?.id) return;
 
@@ -66,6 +92,9 @@ export default function DeliveryLayout() {
     socket.emit('join', user.id);
     socket.emit('join_deliveries');
     socket.emit('join', 'role_delivery');
+
+    // Fetch initial counts and notifications on mount
+    fetchDeliveryActiveCount();
 
     // Fetch persistent delivery notifications on mount
     axios.get('/notifications').then((res) => {
@@ -127,6 +156,7 @@ export default function DeliveryLayout() {
     };
 
     const handleDeliveryOffer = (data) => {
+      fetchDeliveryActiveCount();
       if (!isOnline) return;
       const orderNum = data.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'ORD';
       const notif = {
@@ -148,6 +178,7 @@ export default function DeliveryLayout() {
     };
 
     const handleReadyForPickup = (data) => {
+      fetchDeliveryActiveCount();
       if (!isOnline) return;
       const orderNum = data.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'ORD';
       const notif = {
@@ -169,6 +200,7 @@ export default function DeliveryLayout() {
     };
 
     const handleDriverAssigned = (data) => {
+      fetchDeliveryActiveCount();
       const orderNum = data.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'ORD';
       const notif = {
         id: Date.now(),
@@ -189,8 +221,13 @@ export default function DeliveryLayout() {
     };
 
     const handleOrderAccepted = (data) => {
+      fetchDeliveryActiveCount();
       // Remove this order from notifications — another driver took it
       setNotificationsList(prev => prev.filter(n => n.orderId !== data.orderId));
+    };
+
+    const handleOrderStatusUpdate = () => {
+      fetchDeliveryActiveCount();
     };
 
     socket.on('NEW_NOTIFICATION', handleNewNotification);
@@ -199,6 +236,7 @@ export default function DeliveryLayout() {
     socket.on('ORDER_READY_FOR_PICKUP', handleReadyForPickup);
     socket.on('DRIVER_ASSIGNED', handleDriverAssigned);
     socket.on('ORDER_ACCEPTED', handleOrderAccepted);
+    socket.on('ORDER_STATUS_UPDATED', handleOrderStatusUpdate);
 
     return () => {
       socket.off('NEW_NOTIFICATION', handleNewNotification);
@@ -207,6 +245,7 @@ export default function DeliveryLayout() {
       socket.off('ORDER_READY_FOR_PICKUP', handleReadyForPickup);
       socket.off('DRIVER_ASSIGNED', handleDriverAssigned);
       socket.off('ORDER_ACCEPTED', handleOrderAccepted);
+      socket.off('ORDER_STATUS_UPDATED', handleOrderStatusUpdate);
     };
   }, [user, isOnline, profile, token]);
 
@@ -232,7 +271,7 @@ export default function DeliveryLayout() {
 
   const navItems = [
     { label: 'Dashboard', path: '/delivery', icon: <AppstoreOutlined /> },
-    { label: 'Orders', path: '/delivery/orders', icon: <ShoppingOutlined />, badge: activeCount },
+    { label: 'Orders', path: '/delivery/orders', icon: <ShoppingOutlined />, badge: deliveryActiveCount > 0 ? deliveryActiveCount : undefined },
     { label: 'Earnings', path: '/delivery/summary', icon: <WalletOutlined /> },
     { label: 'Monthly Summary', path: '/delivery/summary', icon: <BarChartOutlined /> },
     { label: 'Profile', path: '/delivery/profile', icon: <UserOutlined /> },
