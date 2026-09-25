@@ -4,15 +4,15 @@ on:
   push:
     branches:
       - main
-      - feature/*
-      - fix/*
+      - "feature/**"
+      - "fix/**"
   pull_request:
     branches:
       - main
 
 jobs:
   validate:
-    name: Lint, Typecheck, Test & Build
+    name: Build, Lint, Typecheck & Test
     runs-on: ubuntu-latest
 
     steps:
@@ -36,11 +36,11 @@ jobs:
       - name: Run ESLint
         run: pnpm run lint
 
+      - name: Build Monorepo (Generate Prisma & Packages)
+        run: pnpm run build
+
       - name: Run Typecheck
         run: pnpm run typecheck
 
       - name: Run Unit & Service Tests
         run: pnpm --filter @orderly/contracts --filter @orderly/events --filter @orderly/identity --filter @orderly/restaurant --filter @orderly/order --filter @orderly/payment --filter @orderly/delivery --filter @orderly/notification test
-
-      - name: Build Monorepo
-        run: pnpm run build
