@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSelector } from 'react-redux';
 import axios from '../../api/axios';
 import { 
@@ -149,7 +149,7 @@ function AddCategoryInline({ onCreated }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function MenuManagement() {
-    const { profile, token } = useSelector(state => state.auth);
+    const { profile } = useSelector(state => state.auth);
     const [items, setItems] = useState([]);
     const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -163,7 +163,7 @@ export default function MenuManagement() {
     const [editingItem, setEditingItem] = useState(null);
     const [form] = Form.useForm();
 
-    const fetchCategories = async () => {
+    const fetchCategories = useCallback(async () => {
         if (!profile?.id) return;
         try {
             const response = await axios.get(`/menu/categories/${profile.id}`);
@@ -174,9 +174,9 @@ export default function MenuManagement() {
             console.error('Error fetching categories:', error);
             setCategories([]);
         }
-    };
+    }, [profile]);
 
-    const fetchMenu = async (currentPage = page, currentSearch = search, currentCategory = selectedCategory) => {
+    const fetchMenu = useCallback(async (currentPage = page, currentSearch = search, currentCategory = selectedCategory) => {
         if (!profile?.id) {
             setLoading(false);
             setItems([]);
@@ -207,14 +207,14 @@ export default function MenuManagement() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [profile, page, search, selectedCategory]);
 
     useEffect(() => {
         if (profile?.id) {
             fetchMenu();
             fetchCategories();
         }
-    }, [profile, page]);
+    }, [profile, fetchMenu, fetchCategories]);
 
     const handleSearch = (e) => {
         setSearch(e.target.value);
@@ -246,14 +246,22 @@ export default function MenuManagement() {
             const values = await form.validateFields();
             
             if (editingItem) {
-                const { data: res } = await axios.put(`/menu/${editingItem.id}`, values);
+                const { data: res } = await axios.put(`/menu/${editingItem.id}`, {
+                    ...values,
+                    restaurant_id: profile?.id,
+                    restaurantId: profile?.id
+                });
                 notification.success({ message: 'Item updated successfully' });
                 // Optimistically update item in list without waiting for refetch
                 if (res.success && res.data) {
                     setItems(prev => prev.map(it => it.id === editingItem.id ? { ...it, ...res.data } : it));
                 }
             } else {
-                const { data: res } = await axios.post('/menu', values);
+                const { data: res } = await axios.post('/menu', {
+                    ...values,
+                    restaurant_id: profile?.id,
+                    restaurantId: profile?.id
+                });
                 notification.success({ message: 'Item created successfully!' });
                 // Optimistically prepend the new item so it shows immediately
                 if (res.success && res.data) {
@@ -290,12 +298,22 @@ export default function MenuManagement() {
 
     const toggleAvailability = async (id) => {
         // Optimistic: flip is_available immediately in UI
-        setItems(prev => prev.map(it => it.id === id ? { ...it, is_available: !it.is_available } : it));
+        const itemToToggle = items.find(it => it.id === id);
+        const newAvail = itemToToggle ? !itemToToggle.is_available : false;
+
+        setItems(prev => prev.map(it => it.id === id ? { ...it, is_available: newAvail } : it));
         try {
-            await axios.patch(`/menu/${id}/toggle-availability`, {});
+            const { data: res } = await axios.patch(`/menu/${id}/toggle-availability`, {});
+            if (res.success) {
+                notification.success({
+                    message: newAvail ? 'Item Marked Available' : 'Item Marked Out of Stock',
+                    description: `"${itemToToggle?.name || 'Dish'}" is now ${newAvail ? 'available for customer orders' : 'marked Out of Stock on customer pages'}.`,
+                    placement: 'topRight'
+                });
+            }
         } catch (error) {
             // Revert on failure
-            setItems(prev => prev.map(it => it.id === id ? { ...it, is_available: !it.is_available } : it));
+            setItems(prev => prev.map(it => it.id === id ? { ...it, is_available: !newAvail } : it));
             notification.error({ message: 'Failed to update availability' });
         }
     };

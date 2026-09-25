@@ -4,7 +4,6 @@ import { Formik, Form, Field, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
 import axios from '../../api/axios';
 import { loginSuccess } from '../../redux/slices/authSlice';
-import socket from '../../socket';
 import { notification } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -78,11 +77,11 @@ export default function Profile() {
           {/* Avatar card */}
           <div className="hidden lg:flex items-center gap-4 bg-white/10 backdrop-blur-md p-5 rounded-2xl border border-white/10 shadow-xl">
             <div className="w-14 h-14 rounded-2xl bg-orange-500 text-white font-black text-2xl flex items-center justify-center shadow-lg">
-              {user.full_name?.charAt(0) || 'U'}
+              {(user?.full_name || user?.fullName || user?.email || 'U').trim().charAt(0).toUpperCase()}
             </div>
             <div>
-              <p className="font-bold text-white text-base">{user.full_name}</p>
-              <p className="text-orange-400 text-xs font-bold uppercase tracking-wider">{user.role} Account</p>
+              <p className="font-bold text-white text-base">{user?.full_name || user?.fullName || 'User'}</p>
+              <p className="text-orange-400 text-xs font-bold uppercase tracking-wider">{user?.role || 'Customer'} Account</p>
             </div>
           </div>
         </div>
@@ -106,8 +105,8 @@ export default function Profile() {
             <Formik
               enableReinitialize
               initialValues={{
-                full_name: user.full_name || '',
-                phone_number: user.phone_number || '',
+                full_name: user?.full_name || user?.fullName || profile?.full_name || profile?.fullName || '',
+                phone_number: user?.phone_number || user?.phoneNumber || profile?.phone_number || profile?.phone || '',
                 password: '',
                 restaurant_name: profile?.name || '',
                 location: profile?.location || '',
@@ -122,9 +121,21 @@ export default function Profile() {
                   const response = await axios.put('/auth/profile', values);
                   if (response.data.success) {
                     const updatedData = response.data.data;
-                    let activeProfile = updatedData.Customer || updatedData.Restaurant || updatedData.DeliveryPartner || updatedData.Admin || null;
+                    let activeProfile = updatedData.Customer || updatedData.Restaurant || updatedData.DeliveryPartner || updatedData.Admin || profile || null;
+                    const nameVal = updatedData.full_name || updatedData.fullName || updatedData.name || values.full_name;
+                    const phoneVal = updatedData.phone_number || updatedData.phoneNumber || updatedData.phone || values.phone_number;
                     dispatch(loginSuccess({
-                      user: { id: updatedData.id, email: updatedData.email, role: updatedData.role, full_name: updatedData.full_name, phone_number: updatedData.phone_number },
+                      user: {
+                        ...user,
+                        id: updatedData.id || user.id,
+                        email: updatedData.email || user.email,
+                        role: updatedData.role || user.role,
+                        full_name: nameVal,
+                        fullName: nameVal,
+                        name: nameVal,
+                        phone_number: phoneVal,
+                        phoneNumber: phoneVal,
+                      },
                       profile: activeProfile,
                       token,
                     }));
@@ -205,21 +216,21 @@ export default function Profile() {
             <div className="bg-white rounded-3xl p-6 border border-neutral-200/80 shadow-sm space-y-4">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-orange-50 text-orange-600 font-extrabold text-xl flex items-center justify-center">
-                  {user.full_name?.charAt(0) || 'U'}
+                  {(user?.full_name || user?.fullName || user?.email || 'U').trim().charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-neutral-900 text-base leading-tight">{user.full_name}</h3>
-                  <p className="text-xs text-orange-600 font-bold uppercase tracking-wider mt-0.5">{user.role} Account</p>
+                  <h3 className="font-extrabold text-neutral-900 text-base leading-tight">{user?.full_name || user?.fullName || 'User'}</h3>
+                  <p className="text-xs text-orange-600 font-bold uppercase tracking-wider mt-0.5">{user?.role || 'Customer'} Account</p>
                 </div>
               </div>
               <div className="border-t border-neutral-100 pt-4 space-y-3 text-xs text-neutral-600 font-medium">
                 <div className="flex justify-between">
                   <span>Account Email</span>
-                  <span className="font-bold text-neutral-800 truncate max-w-[160px]">{user.email}</span>
+                  <span className="font-bold text-neutral-800 truncate max-w-[160px]">{user?.email}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Phone</span>
-                  <span className="font-bold text-neutral-800">{user.phone_number || 'N/A'}</span>
+                  <span className="font-bold text-neutral-800">{user?.phone_number || user?.phoneNumber || 'N/A'}</span>
                 </div>
               </div>
             </div>

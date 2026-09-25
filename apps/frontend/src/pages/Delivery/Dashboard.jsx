@@ -24,7 +24,6 @@ export default function DeliveryDashboard() {
   const navigate = useNavigate();
 
   const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(Boolean(profile?.is_available ?? true));
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
@@ -45,7 +44,6 @@ export default function DeliveryDashboard() {
   useEffect(() => {
     const fetchProfileAndHistory = async () => {
       try {
-        setLoading(true);
         const { data: profData } = await axios.get('/delivery-partner/my-profile');
         if (profData?.success && profData?.data) {
           const freshProfile = profData.data;
@@ -64,17 +62,13 @@ export default function DeliveryDashboard() {
       } catch (error) {
         console.error('Error fetching driver history:', error);
         setHistory([]);
-      } finally {
-        setLoading(false);
       }
     };
 
     if (token) {
       fetchProfileAndHistory();
-    } else {
-      setLoading(false);
     }
-  }, [token]);
+  }, [token, dispatch, user]);
 
   const handleToggleOnline = async () => {
     if (updatingStatus) return;

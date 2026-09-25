@@ -154,7 +154,7 @@ export default function CartPage() {
     };
 
     fetchMenuRecommendations();
-  }, []);
+  }, [items]);
 
   useEffect(() => {
     socket.on('MENU_ITEM_UPDATED', (data) => {

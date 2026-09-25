@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import axios from '../../api/axios';
+import socket from '../../socket';
 import { addToCartAsync } from '../../redux/slices/cartSlice';
 import { message } from 'antd';
 import { 
@@ -37,7 +38,6 @@ const fallbackMenuItems = [
 ];
 
 export default function MenuList() {
-  const navigate = useNavigate();
   const location = useLocation();
   const dispatch = useDispatch();
   
@@ -70,9 +70,34 @@ export default function MenuList() {
     };
 
     fetchMenuItems();
+
+    const handleMenuItemUpdate = (data) => {
+      if (!data) return;
+      const targetId = data.itemId || data.id;
+      const isAvail = data.is_available ?? data.is_in_stock ?? (data.status !== 'OUT_OF_STOCK');
+      setMenuItems(prev => prev.map(item => 
+        String(item.id) === String(targetId) || (data.name && String(item.name).toLowerCase() === String(data.name).toLowerCase())
+          ? { ...item, ...data, is_available: isAvail, is_in_stock: isAvail, in_stock: isAvail, status: isAvail ? 'AVAILABLE' : 'OUT_OF_STOCK' }
+          : item
+      ));
+    };
+
+    socket.on('MENU_ITEM_UPDATED', handleMenuItemUpdate);
+    socket.on('ITEM_AVAILABILITY_CHANGED', handleMenuItemUpdate);
+
+    return () => {
+      socket.off('MENU_ITEM_UPDATED', handleMenuItemUpdate);
+      socket.off('ITEM_AVAILABILITY_CHANGED', handleMenuItemUpdate);
+    };
   }, []);
 
   const handleAddToCart = async (item) => {
+    const isAvailable = item.is_available !== false && item.is_in_stock !== false && item.in_stock !== false && item.status !== 'OUT_OF_STOCK' && item.status !== 'UNAVAILABLE';
+    if (!isAvailable) {
+      message.warning(`"${item.name}" is currently out of stock.`);
+      return;
+    }
+
     try {
       await dispatch(addToCartAsync({
         menu_item_id: item.id,
@@ -227,24 +252,37 @@ export default function MenuList() {
                     item.restaurant_name ||
                     'Orderly Gourmet Hub';
 
+                  const isAvailable = item.is_available !== false && item.is_in_stock !== false && item.in_stock !== false && item.status !== 'OUT_OF_STOCK' && item.status !== 'UNAVAILABLE';
                   return (
                     <div 
                       key={item.id}
-                      className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden hover:shadow-lg transition-all duration-300 flex flex-col group"
+                      className={`bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden hover:shadow-lg transition-all duration-300 flex flex-col group ${
+                        !isAvailable ? 'opacity-90 bg-slate-50/50' : ''
+                      }`}
                     >
                       <div className="h-48 overflow-hidden relative">
                         <img 
                           src={item.image_url || item.image || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&q=80&w=600'} 
                           alt={item.name} 
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          className={`w-full h-full object-cover transition-transform duration-500 ${
+                            !isAvailable ? 'grayscale opacity-60' : 'group-hover:scale-105'
+                          }`}
                         />
-                        <button 
-                          onClick={() => handleAddToCart(item)}
-                          className="absolute bottom-3 right-3 bg-white w-10 h-10 rounded-full shadow-md flex items-center justify-center text-neutral-900 hover:text-orange-600 hover:scale-110 active:scale-95 transition-all cursor-pointer border border-neutral-100"
-                          title="Add to Cart"
-                        >
-                          <PlusOutlined className="text-base" />
-                        </button>
+                        {!isAvailable ? (
+                          <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center">
+                            <span className="bg-red-600/95 text-white text-xs font-black uppercase tracking-wider px-3 py-1 rounded-full shadow-lg border border-red-400/40">
+                              Out of Stock
+                            </span>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={() => handleAddToCart(item)}
+                            className="absolute bottom-3 right-3 bg-white w-10 h-10 rounded-full shadow-md flex items-center justify-center text-neutral-900 hover:text-orange-600 hover:scale-110 active:scale-95 transition-all cursor-pointer border border-neutral-100"
+                            title="Add to Cart"
+                          >
+                            <PlusOutlined className="text-base" />
+                          </button>
+                        )}
                       </div>
 
                       <div className="p-5 flex flex-col flex-grow">

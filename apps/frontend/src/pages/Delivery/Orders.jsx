@@ -125,7 +125,7 @@ function DeliveryOfferToast({ offer, onAccept, onReject, onDismiss }) {
     if (countdown <= 0) { onDismiss(); return; }
     const t = setTimeout(() => setCountdown(c => c - 1), 1000);
     return () => clearTimeout(t);
-  }, [countdown]);
+  }, [countdown, onDismiss]);
 
   const restName = offer.restaurant?.name || offer.Restaurant?.name || 'Restaurant';
   const dropAddress = offer.deliveryAddress?.address_line1 || offer.address?.street || offer.Address?.street || 'Customer location';
@@ -258,7 +258,7 @@ export default function DeliveryOrders() {
           });
         }
       },
-      (err) => {
+      (_err) => {
         setLocating(false);
         notification.warning({ 
           title: 'GPS Warning', 
@@ -354,7 +354,7 @@ export default function DeliveryOrders() {
     } else {
       setLoading(false);
     }
-  }, [profile?.id, token, isOnline, rejectedOrderIds]);
+  }, [profile?.id, token, isOnline, rejectedOrderIds, dispatch]);
 
   const acceptRequest = async (orderId) => {
     try {

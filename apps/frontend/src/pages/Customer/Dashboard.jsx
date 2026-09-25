@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
 import axios from '../../api/axios';
+import socket from '../../socket';
 import SectionHeader from '../../components/common/SectionHeader';
 import { 
   ArrowRightOutlined, 
   CheckCircleFilled, 
-  ClockCircleOutlined,
+  ClockCircleOutlined, 
   ClockCircleFilled, 
   StarFilled, 
   ThunderboltFilled,
@@ -23,7 +23,6 @@ const categories = [
 ];
 
 export default function Dashboard() {
-  const { user } = useSelector(state => state.auth);
   const [restaurants, setRestaurants] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -42,6 +41,20 @@ export default function Dashboard() {
       }
     };
     fetchTopRestaurants();
+
+    const handleRestaurantUpdate = () => {
+      fetchTopRestaurants();
+    };
+
+    socket.on('RESTAURANT_STATUS_UPDATED', handleRestaurantUpdate);
+    socket.on('RESTAURANT_APPROVED', handleRestaurantUpdate);
+    socket.on('RESTAURANT_UPDATED', handleRestaurantUpdate);
+
+    return () => {
+      socket.off('RESTAURANT_STATUS_UPDATED', handleRestaurantUpdate);
+      socket.off('RESTAURANT_APPROVED', handleRestaurantUpdate);
+      socket.off('RESTAURANT_UPDATED', handleRestaurantUpdate);
+    };
   }, []);
 
   const handleCategoryClick = (catId) => {

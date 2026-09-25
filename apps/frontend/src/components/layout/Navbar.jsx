@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { logout } from '../../redux/slices/authSlice';
 import { resetCartState } from '../../redux/slices/cartSlice';
@@ -82,7 +82,6 @@ const IconClose = () => (
 
 export default function Navbar({ activeOrdersCount = 0 }) {
   const dispatch = useDispatch();
-  const navigate = useNavigate();
   const location = useLocation();
   const { user, profile, isAuthenticated } = useSelector((state) => state.auth);
   const { items } = useSelector((state) => state.cart);
@@ -103,13 +102,45 @@ export default function Navbar({ activeOrdersCount = 0 }) {
      localStorage.getItem('guest_session_id'))
   );
 
-  const rawName = user?.full_name || profile?.full_name || user?.name || profile?.name || user?.email || '';
+  // Resolve user display name
+  const rawFullName = (
+    user?.full_name ||
+    user?.fullName ||
+    profile?.full_name ||
+    profile?.fullName ||
+    user?.name ||
+    profile?.name ||
+    user?.displayName ||
+    profile?.displayName ||
+    ''
+  ).trim();
+
+  const formatEmailPrefix = (email) => {
+    if (!email) return 'User';
+    const prefix = email.split('@')[0];
+    const cleaned = prefix.replace(/([a-zA-Z]+)(\d+)/, '$1 $2').replace(/[._-]+/g, ' ').trim();
+    const words = cleaned.split(/\s+/).filter(Boolean);
+    if (words.length > 0) {
+      return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+    return prefix.charAt(0).toUpperCase() + prefix.slice(1);
+  };
+
+  const userEmail = user?.email || profile?.email || '';
+  const resolvedFullName = rawFullName && !rawFullName.includes('@')
+    ? rawFullName
+    : (userEmail ? formatEmailPrefix(userEmail) : 'Customer');
+
   const displayName = isUserLoggedIn
-    ? (rawName.split(' ')[0] || user?.email?.split('@')[0] || 'User')
+    ? (resolvedFullName.length <= 18 ? resolvedFullName : (resolvedFullName.split(' ')[0] || resolvedFullName))
     : 'Guest';
 
+  const fullDisplayName = isUserLoggedIn
+    ? resolvedFullName
+    : 'Guest User';
+
   const userInitial = isUserLoggedIn
-    ? (rawName.trim().charAt(0).toUpperCase() || 'U')
+    ? (resolvedFullName.charAt(0).toUpperCase() || 'U')
     : 'G';
 
   const profileImage = !imgError
@@ -127,7 +158,7 @@ export default function Navbar({ activeOrdersCount = 0 }) {
     localStorage.removeItem('orderly_guest_id');
     dispatch(resetCartState());
     setDropdownOpen(false);
-    window.location.href = '/register';
+    window.location.href = '/login';
   };
 
   const handleGuestSignOut = () => {
@@ -140,7 +171,7 @@ export default function Navbar({ activeOrdersCount = 0 }) {
     localStorage.removeItem('orderly_guest_id');
     dispatch(resetCartState());
     setDropdownOpen(false);
-    window.location.href = '/register';
+    window.location.href = '/login';
   };
 
   const isActive = (path) => {
@@ -169,8 +200,6 @@ export default function Navbar({ activeOrdersCount = 0 }) {
     { name: 'Partners',    path: '/customer/partners',    icon: <IconPartner /> },
     { name: 'Tracking',    path: '/customer/tracking',    icon: <IconClock />, badge: activeOrdersCount > 0 ? activeOrdersCount : null },
   ];
-
-  const userName = user?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User';
 
   return (
     <nav className="fixed top-0 w-full z-50 bg-white border-b border-neutral-100 shadow-sm">
@@ -257,9 +286,9 @@ export default function Navbar({ activeOrdersCount = 0 }) {
                 {dropdownOpen && (
                   <div className="absolute right-0 mt-2 w-52 bg-white border border-neutral-100 rounded-2xl shadow-xl py-1.5 z-50 animate-fade-in divide-y divide-neutral-100">
                     <div className="px-4 py-2.5 bg-neutral-50/80 rounded-t-2xl">
-                      <div className="text-xs font-bold text-neutral-900 truncate">{rawName || 'Guest User'}</div>
+                      <div className="text-xs font-bold text-neutral-900 truncate">{fullDisplayName}</div>
                       <div className="text-[11px] text-neutral-500 font-medium truncate">
-                        {isUserLoggedIn ? (user?.email || 'Registered Customer') : 'Guest Session Active'}
+                        {isUserLoggedIn ? (userEmail || 'Registered Customer') : 'Guest Session Active'}
                       </div>
                     </div>
 
@@ -333,15 +362,9 @@ export default function Navbar({ activeOrdersCount = 0 }) {
               <div className="hidden sm:flex items-center gap-2">
                 <Link
                   to="/login"
-                  className="px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-semibold text-neutral-700 hover:text-neutral-900 hover:bg-neutral-100 transition-all"
+                  className="px-5 py-2 rounded-full text-xs sm:text-sm font-bold text-white bg-[#ea580c] hover:bg-[#d94e08] shadow-sm hover:shadow transition-all"
                 >
                   Sign In
-                </Link>
-                <Link
-                  to="/register"
-                  className="px-4 py-1.5 rounded-full text-xs sm:text-sm font-bold text-white bg-[#ea580c] hover:bg-[#d94e08] shadow-sm hover:shadow transition-all"
-                >
-                  Register
                 </Link>
               </div>
             )}
@@ -457,20 +480,13 @@ export default function Navbar({ activeOrdersCount = 0 }) {
               </button>
             </div>
           ) : (
-            <div className="pt-3 border-t border-neutral-100 grid grid-cols-2 gap-2 mt-2">
+            <div className="pt-3 border-t border-neutral-100 mt-2">
               <Link
                 to="/login"
                 onClick={() => setMobileOpen(false)}
-                className="flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-semibold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 transition-colors text-center"
+                className="flex items-center justify-center w-full px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-[#ea580c] hover:bg-[#d94e08] shadow-sm text-center transition-colors"
               >
                 Sign In
-              </Link>
-              <Link
-                to="/register"
-                onClick={() => setMobileOpen(false)}
-                className="flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-[#ea580c] hover:bg-[#d94e08] shadow-sm text-center"
-              >
-                Register
               </Link>
             </div>
           )}

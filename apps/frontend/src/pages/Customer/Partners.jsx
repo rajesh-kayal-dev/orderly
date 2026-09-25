@@ -54,10 +54,11 @@ export default function Partners() {
 
     fetchApprovedPartners();
 
-    // Listen for real-time driver status updates
-    socket.on('DRIVER_STATUS_UPDATED', (data) => {
+    // Listen for real-time driver status and approval updates
+    const handleDriverStatusUpdated = (data) => {
+      if (!data) return;
       setPartnersList(prev => prev.map(p => {
-        const matchesUser = String(p.id) === String(data.userId);
+        const matchesUser = String(p.id) === String(data.userId || data.id);
         const matchesDriverId = String(p.id) === String(data.driverId) || (p.driverId && String(p.driverId) === String(data.driverId));
 
         if (matchesUser || matchesDriverId) {
@@ -67,6 +68,7 @@ export default function Partners() {
           );
           return {
             ...p,
+            ...data,
             status: isOnlineNow ? 'Online' : 'Offline',
             is_online: isOnlineNow,
             is_available: isOnlineNow
@@ -74,10 +76,45 @@ export default function Partners() {
         }
         return p;
       }));
-    });
+    };
+
+    const handlePartnerApproved = (data) => {
+      if (!data) return;
+      setPartnersList(prev => {
+        const existingIdx = prev.findIndex(p => String(p.id) === String(data.id || data.userId));
+        if (existingIdx !== -1) {
+          const updated = [...prev];
+          updated[existingIdx] = { ...updated[existingIdx], ...data, status: 'Online', is_available: true, is_approved: true };
+          return updated;
+        } else {
+          const newPartner = {
+            id: data.id || data.userId || `dp-${Date.now()}`,
+            name: data.name || data.full_name || 'Delivery Partner',
+            phone: data.phone || '+91 98765 43210',
+            vehicle_type: data.vehicle_type || 'Motorcycle',
+            rating: data.rating || 4.9,
+            total_deliveries: data.total_deliveries || 0,
+            status: 'Online',
+            is_online: true,
+            is_available: true,
+            is_approved: true,
+            avatar_url: data.avatar_url || data.profile_image
+          };
+          return [newPartner, ...prev];
+        }
+      });
+    };
+
+    socket.on('DRIVER_STATUS_UPDATED', handleDriverStatusUpdated);
+    socket.on('PARTNER_APPROVED', handlePartnerApproved);
+    socket.on('DRIVER_APPROVED', handlePartnerApproved);
+    socket.on('DELIVERY_PARTNER_UPDATED', handleDriverStatusUpdated);
 
     return () => {
-      socket.off('DRIVER_STATUS_UPDATED');
+      socket.off('DRIVER_STATUS_UPDATED', handleDriverStatusUpdated);
+      socket.off('PARTNER_APPROVED', handlePartnerApproved);
+      socket.off('DRIVER_APPROVED', handlePartnerApproved);
+      socket.off('DELIVERY_PARTNER_UPDATED', handleDriverStatusUpdated);
     };
   }, []);
 
@@ -89,6 +126,32 @@ export default function Partners() {
       return Boolean(partner.is_online);
     }
     return partner.status === 'Online' || partner.status === 'available';
+  };
+
+  const getPartnerInitials = (name) => {
+    if (!name) return 'DP';
+    const clean = name.trim();
+    const parts = clean.split(/\s+/);
+    if (parts.length === 1) {
+      return parts[0].slice(0, 2).toUpperCase();
+    }
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
+  const getAvatarGradient = (name = '') => {
+    const gradients = [
+      'from-orange-500 to-amber-500',
+      'from-blue-600 to-cyan-600',
+      'from-emerald-600 to-teal-500',
+      'from-violet-600 to-purple-500',
+      'from-rose-500 to-pink-600',
+      'from-amber-500 to-orange-600',
+    ];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return gradients[Math.abs(hash) % gradients.length];
   };
 
   // Filtering Logic
@@ -324,13 +387,11 @@ export default function Partners() {
                       {/* Top Ambient Circle Graphic */}
                       <div className="w-28 h-28 rounded-full bg-gradient-to-b from-orange-50 to-transparent absolute -top-8 left-1/2 -translate-x-1/2 pointer-events-none" />
 
-                      {/* Driver Circular Photo */}
+                      {/* Driver Initials Badge */}
                       <div className="relative mx-auto mb-3">
-                        <img
-                          src={partner.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400'}
-                          alt={partner.name}
-                          className="w-20 h-20 rounded-full border-4 border-white shadow-md object-cover relative z-10 group-hover:scale-105 transition-transform duration-300"
-                        />
+                        <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${getAvatarGradient(partner.name)} text-white font-black text-2xl flex items-center justify-center border-4 border-white shadow-md relative z-10 group-hover:scale-105 transition-transform duration-300 tracking-wider select-none`}>
+                          {getPartnerInitials(partner.name)}
+                        </div>
                         
                         {/* Status Badge */}
                         <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border">
@@ -445,11 +506,9 @@ export default function Partners() {
 
             {/* Driver Profile Header */}
             <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
-              <img
-                src={selectedPartner.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400'}
-                alt={selectedPartner.name}
-                className="w-16 h-16 rounded-full object-cover border-2 border-orange-500 shadow-md shrink-0"
-              />
+              <div className={`w-16 h-16 rounded-full bg-gradient-to-br ${getAvatarGradient(selectedPartner.name)} text-white font-black text-xl flex items-center justify-center border-2 border-white shadow-md shrink-0 tracking-wider select-none`}>
+                {getPartnerInitials(selectedPartner.name)}
+              </div>
               <div>
                 <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-black uppercase tracking-wider mb-1 border border-emerald-200">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />

@@ -1,15 +1,14 @@
-// Empty layout components for Restaurant, Admin, and Delivery for brevity.
 import React from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { logout } from '../../redux/slices/authSlice';
 import { resetCartState } from '../../redux/slices/cartSlice';
 import BrandLogo from '../common/BrandLogo';
-import { 
-  AppstoreOutlined, 
-  ShoppingOutlined, 
-  UserOutlined, 
-  TeamOutlined, 
+import {
+  AppstoreOutlined,
+  ShoppingOutlined,
+  UserOutlined,
+  TeamOutlined,
   UnorderedListOutlined,
   LogoutOutlined,
   ArrowRightOutlined,
@@ -17,11 +16,16 @@ import {
   AuditOutlined
 } from '@ant-design/icons';
 
-export default function GenericLayout({ roleTitle, rolePath }) {
+interface GenericLayoutProps {
+  roleTitle?: string;
+  rolePath?: string;
+}
+
+export default function GenericLayout({ roleTitle = '', rolePath = '' }: GenericLayoutProps) {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { user, profile } = useSelector(state => state.auth);
-  const activeCount = useSelector(state => state.order.activeCount);
+  const { user } = useSelector((state: any) => state.auth);
+  const activeCount = useSelector((state: any) => state.order?.activeCount);
 
   const handleLogout = () => {
     dispatch(logout());
@@ -30,12 +34,12 @@ export default function GenericLayout({ roleTitle, rolePath }) {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50 font-sans">
       {/* Sidebar */}
       <aside className="w-64 bg-slate-900 shadow-xl fixed h-full z-20 transition-all duration-300">
         <div className="p-6">
           <div className="flex items-center gap-3 mb-10">
-            <BrandLogo variant="light" size="md" to={rolePath} />
+            <BrandLogo variant="light" size="md" to={rolePath || '/'} />
           </div>
 
           <nav className="space-y-2">
@@ -94,7 +98,14 @@ export default function GenericLayout({ roleTitle, rolePath }) {
   );
 }
 
-function NavItem({ to, icon, label, badge }) {
+interface NavItemProps {
+  to: string;
+  icon: React.ReactNode;
+  label: string;
+  badge?: number;
+}
+
+function NavItem({ to, icon, label, badge = 0 }: NavItemProps) {
   return (
     <Link
       to={to}

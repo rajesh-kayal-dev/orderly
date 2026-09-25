@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSelector } from 'react-redux';
 import axios from '../../api/axios';
 import {
@@ -61,11 +61,7 @@ export default function RestaurantSummary() {
   const yearOptions = buildYearOptions();
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  useEffect(() => {
-    if (profile?.id) fetchSummary();
-  }, [profile, year]);
-
-  const fetchSummary = async () => {
+  const fetchSummary = useCallback(async () => {
     try {
       setLoading(true);
       setOrderPage(1);
@@ -79,7 +75,11 @@ export default function RestaurantSummary() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [year]);
+
+  useEffect(() => {
+    if (profile?.id) fetchSummary();
+  }, [profile?.id, fetchSummary]);
 
   const statCards = data
     ? [

@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Outlet, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Outlet, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { logout } from '../../redux/slices/authSlice';
 import { resetCartState } from '../../redux/slices/cartSlice';
+import { loginSuccess } from '../../redux/slices/authSlice';
+import { notification } from 'antd';
 import axios from '../../api/axios';
 import socket from '../../socket';
 import BrandLogo from '../common/BrandLogo';
@@ -14,32 +16,63 @@ import {
   UserOutlined,
   SettingOutlined,
   BellOutlined,
-  CalendarOutlined,
   LogoutOutlined,
+  CalendarOutlined,
   RightOutlined,
   ClockCircleOutlined,
   CarOutlined,
   DownOutlined
 } from '@ant-design/icons';
 
+interface NotificationItem {
+  id: string | number;
+  title: string;
+  message?: string;
+  time: string;
+  read: boolean;
+  link?: string;
+  orderId?: string;
+}
+
 export default function DeliveryLayout() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, profile, token } = useSelector(state => state.auth);
-  const activeCount = useSelector(state => state.order?.activeCount);
-
-  if (!token || user?.role !== 'delivery_partner') {
-    return <Navigate to="/login" replace />;
-  }
+  const { user, profile, token } = useSelector((state: any) => state.auth);
 
   // Track online status from redux profile in real time
   const isOnline = Boolean(profile?.is_available);
 
-  const [currentDateString, setCurrentDateString] = useState('10-09-2026');
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [notificationsList, setNotificationsList] = useState([]);
-  const notificationRef = useRef(null);
+  const [currentDateString, setCurrentDateString] = useState<string>('10-09-2026');
+  const [showNotifications, setShowNotifications] = useState<boolean>(false);
+  const [notificationsList, setNotificationsList] = useState<NotificationItem[]>([]);
+  const [deliveryActiveCount, setDeliveryActiveCount] = useState<number>(0);
+  const notificationRef = useRef<HTMLDivElement>(null);
+
+  const fetchDeliveryActiveCount = useCallback(async () => {
+    if (!token) return;
+    try {
+      const [availRes, myRes] = await Promise.allSettled([
+        axios.get('/orders/deliveries/available'),
+        axios.get('/orders/driver/me')
+      ]);
+
+      let availCount = 0;
+      let activeMyCount = 0;
+
+      if (availRes.status === 'fulfilled' && availRes.value.data?.success) {
+        availCount = (availRes.value.data.data || []).length;
+      }
+      if (myRes.status === 'fulfilled' && myRes.value.data?.success) {
+        const myOrders = myRes.value.data.data || [];
+        activeMyCount = myOrders.filter((o: any) => !['delivered', 'completed', 'cancelled'].includes(o.status)).length;
+      }
+
+      setDeliveryActiveCount(isOnline ? availCount + activeMyCount : activeMyCount);
+    } catch {
+      // silent
+    }
+  }, [token, isOnline]);
 
   useEffect(() => {
     const d = new Date();
@@ -48,8 +81,8 @@ export default function DeliveryLayout() {
 
   // Close notification popover on outside click
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
         setShowNotifications(false);
       }
     };
@@ -57,7 +90,7 @@ export default function DeliveryLayout() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Socket notification listener — re-runs when online status changes
+  // Socket notification listener & live count sync
   useEffect(() => {
     if (!user?.id) return;
 
@@ -66,80 +99,163 @@ export default function DeliveryLayout() {
     socket.emit('join_deliveries');
     socket.emit('join', 'role_delivery');
 
+    fetchDeliveryActiveCount();
+
     // Fetch persistent delivery notifications on mount
     axios.get('/notifications').then((res) => {
-      if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
-        const mapped = res.data.data.map((n) => ({
+      if (res.data?.success && Array.isArray(res.data.data)) {
+        const mapped = res.data.data.map((n: any) => ({
           id: n.id,
           title: n.title || n.message,
+          message: n.message,
           time: n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently',
           read: Boolean(n.read),
-          link: '/delivery/orders',
+          link: n.link || '/delivery',
           orderId: n.orderId,
         }));
         setNotificationsList(mapped);
       }
     }).catch(() => {});
 
-    const handleDeliveryOffer = (data) => {
+    const handleNewNotification = (data: any) => {
+      if (!data) return;
+      const notif: NotificationItem = {
+        id: data.id || Date.now(),
+        title: data.title || data.message || 'Notification',
+        message: data.message,
+        time: data.createdAt ? new Date(data.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+        read: Boolean(data.read),
+        link: data.link || '/delivery',
+        orderId: data.orderId,
+      };
+      setNotificationsList((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
+      notification.info({
+        message: notif.title,
+        description: notif.message || 'You have a new update.',
+        placement: 'topRight',
+        duration: 4.5,
+      });
+    };
+
+    const handlePartnerApproved = () => {
+      const notif: NotificationItem = {
+        id: `approved-${Date.now()}`,
+        title: 'Account & Vehicle Approved! 🎉',
+        message: 'Congratulations! Your delivery partner account has been verified and approved. You can now go online and accept orders.',
+        time: 'Just now',
+        read: false,
+        link: '/delivery',
+      };
+      setNotificationsList((prev) => [notif, ...prev.filter((n) => n.title !== notif.title)]);
+      dispatch(loginSuccess({
+        user: { ...user, status: 'ACTIVE', is_approved: true, is_active: true },
+        profile: { ...profile, status: 'ACTIVE', is_approved: true, is_active: true },
+        token
+      }));
+      notification.success({
+        message: 'Account Approved! 🎉',
+        description: 'Your delivery partner account has been verified and approved by admin!',
+        placement: 'topRight',
+        duration: 6,
+      });
+    };
+
+    const handleDeliveryOffer = (data: any) => {
+      fetchDeliveryActiveCount();
       if (!isOnline) return;
-      const orderNum = data.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'ORD';
-      const notif = {
+      const orderNum = data?.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'ORD';
+      const notif: NotificationItem = {
         id: Date.now(),
         title: `New Delivery Available! #${orderNum}`,
+        message: `Pickup available for Order #${orderNum}`,
         time: 'Just now',
         read: false,
         link: '/delivery/orders',
-        orderId: data.orderId
+        orderId: data?.orderId
       };
       setNotificationsList(prev => [notif, ...prev]);
+      notification.info({
+        message: `New Delivery Request #${orderNum}`,
+        description: 'A new order is available for pickup. Open Orders to accept.',
+        placement: 'topRight',
+        duration: 5,
+      });
     };
 
-    const handleReadyForPickup = (data) => {
+    const handleReadyForPickup = (data: any) => {
+      fetchDeliveryActiveCount();
       if (!isOnline) return;
-      const orderNum = data.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'ORD';
-      const notif = {
+      const orderNum = data?.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'ORD';
+      const notif: NotificationItem = {
         id: Date.now(),
         title: `Order #${orderNum} Ready for Pickup!`,
+        message: `Order #${orderNum} is ready for pickup from restaurant.`,
         time: 'Just now',
         read: false,
         link: '/delivery/orders',
-        orderId: data.orderId
+        orderId: data?.orderId
       };
       setNotificationsList(prev => [notif, ...prev]);
+      notification.info({
+        message: `Order #${orderNum} Ready!`,
+        description: 'Restaurant has marked this order ready for pickup.',
+        placement: 'topRight',
+        duration: 4.5,
+      });
     };
 
-    const handleDriverAssigned = (data) => {
-      const orderNum = data.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'ORD';
-      const notif = {
+    const handleDriverAssigned = (data: any) => {
+      fetchDeliveryActiveCount();
+      const orderNum = data?.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'ORD';
+      const notif: NotificationItem = {
         id: Date.now(),
         title: `Order #${orderNum} assigned to you!`,
+        message: `You are assigned to deliver Order #${orderNum}.`,
         time: 'Just now',
         read: false,
         link: '/delivery/orders',
-        orderId: data.orderId
+        orderId: data?.orderId
       };
       setNotificationsList(prev => [notif, ...prev]);
+      notification.success({
+        message: `Order #${orderNum} Assigned`,
+        description: 'You have been assigned to deliver this order.',
+        placement: 'topRight',
+        duration: 5,
+      });
     };
 
-    const handleOrderAccepted = (data) => {
-      // Remove this order from notifications — another driver took it
-      setNotificationsList(prev => prev.filter(n => n.orderId !== data.orderId));
+    const handleOrderAccepted = (data: any) => {
+      fetchDeliveryActiveCount();
+      setNotificationsList(prev => prev.filter(n => n.orderId !== data?.orderId));
     };
 
+    const handleOrderStatusUpdate = () => {
+      fetchDeliveryActiveCount();
+    };
+
+    socket.on('NEW_NOTIFICATION', handleNewNotification);
+    socket.on('PARTNER_APPROVED', handlePartnerApproved);
     socket.on('AVAILABLE_DELIVERY', handleDeliveryOffer);
     socket.on('ORDER_READY_FOR_PICKUP', handleReadyForPickup);
     socket.on('DRIVER_ASSIGNED', handleDriverAssigned);
     socket.on('ORDER_ACCEPTED', handleOrderAccepted);
+    socket.on('ORDER_STATUS_UPDATED', handleOrderStatusUpdate);
 
     return () => {
+      socket.off('NEW_NOTIFICATION', handleNewNotification);
+      socket.off('PARTNER_APPROVED', handlePartnerApproved);
       socket.off('AVAILABLE_DELIVERY', handleDeliveryOffer);
       socket.off('ORDER_READY_FOR_PICKUP', handleReadyForPickup);
       socket.off('DRIVER_ASSIGNED', handleDriverAssigned);
       socket.off('ORDER_ACCEPTED', handleOrderAccepted);
+      socket.off('ORDER_STATUS_UPDATED', handleOrderStatusUpdate);
     };
-  }, [user, isOnline]);
+  }, [user, isOnline, profile, token, fetchDeliveryActiveCount, dispatch]);
 
+  if (!token || user?.role !== 'delivery_partner') {
+    return <Navigate to="/login" replace />;
+  }
 
   const handleLogout = () => {
     dispatch(logout());
@@ -149,10 +265,12 @@ export default function DeliveryLayout() {
 
   const markAllRead = () => {
     setNotificationsList(prev => prev.map(n => ({ ...n, read: true })));
+    axios.post('/notifications/read-all').catch(() => {});
   };
 
   const clearNotifications = () => {
     setNotificationsList([]);
+    axios.delete('/notifications').catch(() => {});
   };
 
   const unreadCount = notificationsList.filter(n => !n.read).length;
@@ -160,7 +278,7 @@ export default function DeliveryLayout() {
 
   const navItems = [
     { label: 'Dashboard', path: '/delivery', icon: <AppstoreOutlined /> },
-    { label: 'Orders', path: '/delivery/orders', icon: <ShoppingOutlined />, badge: activeCount },
+    { label: 'Orders', path: '/delivery/orders', icon: <ShoppingOutlined />, badge: deliveryActiveCount > 0 ? deliveryActiveCount : undefined },
     { label: 'Earnings', path: '/delivery/summary', icon: <WalletOutlined /> },
     { label: 'Monthly Summary', path: '/delivery/summary', icon: <BarChartOutlined /> },
     { label: 'Profile', path: '/delivery/profile', icon: <UserOutlined /> },
@@ -174,9 +292,6 @@ export default function DeliveryLayout() {
     if (currentPath === '/delivery/settings') return 'Driver Settings';
     return 'Delivery Partner Dashboard';
   };
-
-  const userName = user?.full_name || user?.email?.split('@')[0] || 'Amit';
-  const userInitial = userName.charAt(0).toUpperCase();
 
   return (
     <div className="flex h-screen bg-[#F8FAFC] overflow-hidden font-sans">
@@ -342,6 +457,7 @@ export default function DeliveryLayout() {
                           key={item.id}
                           onClick={() => {
                             setNotificationsList(prev => prev.map(n => n.id === item.id ? { ...n, read: true } : n));
+                            if (item.id) axios.patch(`/notifications/${item.id}/read`).catch(() => {});
                             setShowNotifications(false);
                             navigate(item.link || '/delivery/orders');
                           }}
@@ -349,12 +465,17 @@ export default function DeliveryLayout() {
                             item.read ? 'bg-slate-50/50 border-slate-100 text-slate-500' : 'bg-orange-50/40 border-orange-100/80 text-slate-800 font-semibold'
                           }`}
                         >
-                          <div className="space-y-0.5 flex-1">
+                          <div className="space-y-0.5 flex-1 min-w-0">
                             <div className="flex items-center justify-between">
-                              <p className="text-xs font-bold leading-tight group-hover:text-orange-600 transition-colors">{item.title}</p>
-                              <span className="text-[9px] text-orange-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity ml-1">View ➔</span>
+                              <p className="text-xs font-bold leading-tight group-hover:text-orange-600 transition-colors truncate">{item.title}</p>
+                              <span className="text-[9px] text-orange-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity ml-1 shrink-0">View ➔</span>
                             </div>
-                            <p className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                            {item.message && item.message !== item.title && (
+                              <p className="text-[10.5px] text-slate-500 font-normal leading-tight line-clamp-2 mt-0.5">
+                                {item.message}
+                              </p>
+                            )}
+                            <p className="text-[10px] text-slate-400 font-medium flex items-center gap-1 mt-0.5">
                               <ClockCircleOutlined className="text-[9px]" /> {item.time}
                             </p>
                           </div>

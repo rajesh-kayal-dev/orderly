@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import axios from '../../api/axios';
@@ -23,6 +23,7 @@ import {
 
 export default function RestaurantDashboard() {
   const { profile, user } = useSelector(state => state.auth);
+  const dispatch = useDispatch();
   const navigate = useNavigate();
 
   const [orders, setOrders] = useState([]);
@@ -37,9 +38,29 @@ export default function RestaurantDashboard() {
     return () => clearInterval(timer);
   }, []);
 
-  const userName = user?.full_name || profile?.name || 'Rajesh Kayal';
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const res = await axios.get('/restaurants/my-profile');
+        if (res.data?.success && res.data?.data) {
+          const freshProfile = res.data.data;
+          dispatch(loginSuccess({
+            user,
+            profile: { ...profile, ...freshProfile },
+            token: localStorage.getItem('token') || sessionStorage.getItem('token')
+          }));
+        }
+      } catch (_) {}
+    };
+    if (user?.id) {
+      fetchProfile();
+    }
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fetchData = async () => {
+  const restaurantName = profile?.name || (user?.full_name ? `${user.full_name}'s Restaurant` : 'My Restaurant');
+  const ownerName = user?.full_name || profile?.owner_name || 'Partner';
+
+  const fetchData = useCallback(async () => {
     if (!profile?.id) {
       setLoading(false);
       return;
@@ -65,14 +86,16 @@ export default function RestaurantDashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [profile]);
 
   useEffect(() => {
     if (profile && profile.id) {
       fetchData();
 
       socket.connect();
-      socket.emit('join', user.id);
+      if (user?.id) {
+        socket.emit('join', user.id);
+      }
 
       const handleNewOrder = (data) => {
         notification.success({
@@ -98,7 +121,7 @@ export default function RestaurantDashboard() {
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [profile, user]);
+  }, [profile, user, fetchData]);
 
   const getFilteredOrders = (status) => {
     return orders.filter(o => {
@@ -151,10 +174,13 @@ export default function RestaurantDashboard() {
       <div className="bg-gradient-to-r from-[#FFF5EE] via-[#FFEADB] to-[#FED7AA] rounded-2xl p-4 md:p-5 border border-orange-100/80 shadow-xs relative overflow-hidden flex items-center justify-between gap-4">
         {/* Left Greeting Text */}
         <div className="max-w-md z-10">
-          <p className="text-slate-500 font-semibold text-xs mb-0.5">Good to see you,</p>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-1 flex items-center gap-1.5">
-            <span>{userName}!</span>
+          <p className="text-slate-500 font-semibold text-xs mb-0.5 flex items-center gap-1.5">
+            <span>Welcome back, {ownerName}!</span>
             <span className="inline-block">👋</span>
+          </p>
+          <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight mb-1 flex items-center gap-2">
+            <span>{restaurantName}</span>
+            <span className="text-orange-500 text-lg">✨</span>
           </h2>
           <p className="text-slate-600 text-xs leading-normal mb-3 font-medium">
             Manage your orders, menu, and grow your restaurant with Orderly.

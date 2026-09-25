@@ -228,14 +228,19 @@ export const App: React.FC = () => {
           }
         }
 
+        const userName = data.full_name || data.fullName || data.name || '';
+        const userPhone = data.phone_number || data.phoneNumber || null;
         dispatch(
           loginSuccess({
             user: {
               id: data.id,
               email: data.email,
               role: data.role,
-              full_name: data.full_name,
-              phone_number: data.phone_number,
+              full_name: userName,
+              fullName: userName,
+              name: userName,
+              phone_number: userPhone,
+              phoneNumber: userPhone,
             },
             profile,
             token: activeToken,
@@ -257,7 +262,7 @@ export const App: React.FC = () => {
         dispatch(setAuthInitialized({ status: 'unauthenticated' }));
       } else {
         // Network or transient server error, maintain stored state but mark initialized
-        dispatch(setAuthInitialized());
+        dispatch(setAuthInitialized({ status: 'authenticated' }));
       }
     }
   }, [dispatch]);

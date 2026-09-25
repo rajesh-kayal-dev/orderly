@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from '../../api/axios';
-import { useSelector } from 'react-redux';
+import socket from '../../socket';
 import {
   SyncOutlined,
   ShopOutlined,
@@ -19,7 +19,6 @@ import {
 import { Modal, Tag } from 'antd';
 
 export default function AdminOrders() {
-  const { token } = useSelector(state => state.auth);
   const [orders, setOrders] = useState([]);
   const [restaurants, setRestaurants] = useState([]);
   const [selectedRestaurant, setSelectedRestaurant] = useState('');
@@ -33,6 +32,7 @@ export default function AdminOrders() {
     pending: 0,
     accepted: 0,
     preparing: 0,
+    ready: 0,
     picked_up: 0,
     delivered: 0,
     cancelled: 0
@@ -56,9 +56,9 @@ export default function AdminOrders() {
     }
   };
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       let url = `/admin/orders?status=${selectedStatus}&page=${currentPage}&limit=${pageSize}`;
       if (selectedRestaurant) url += `&restaurantId=${selectedRestaurant}`;
       if (selectedMonth) url += `&month=${selectedMonth}`;
@@ -74,6 +74,7 @@ export default function AdminOrders() {
             pending: response.data.counts.pending || 0,
             accepted: response.data.counts.accepted || 0,
             preparing: response.data.counts.preparing || 0,
+            ready: response.data.counts.ready || 0,
             picked_up: response.data.counts.picked_up || 0,
             delivered: response.data.counts.delivered || 0,
             cancelled: response.data.counts.cancelled || 0
@@ -88,9 +89,9 @@ export default function AdminOrders() {
     } catch (error) {
       console.error('Error fetching global orders:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  };
+  }, [selectedStatus, currentPage, pageSize, selectedRestaurant, selectedMonth, selectedYear]);
 
   useEffect(() => {
     fetchRestaurants();
@@ -98,7 +99,32 @@ export default function AdminOrders() {
 
   useEffect(() => {
     fetchOrders();
-  }, [selectedRestaurant, selectedStatus, currentPage, pageSize, selectedMonth, selectedYear]);
+  }, [fetchOrders]);
+
+  // Real-time live auto-update via WebSocket without page refresh
+  useEffect(() => {
+    socket.connect();
+    socket.emit('join', 'role_admin');
+    socket.emit('join_admin');
+
+    const handleOrderEvent = () => {
+      fetchOrders(true);
+    };
+
+    socket.on('NEW_ORDER', handleOrderEvent);
+    socket.on('ORDER_STATUS_UPDATED', handleOrderEvent);
+    socket.on('ORDER_READY_FOR_PICKUP', handleOrderEvent);
+    socket.on('DRIVER_ASSIGNED', handleOrderEvent);
+    socket.on('AVAILABLE_DELIVERY', handleOrderEvent);
+
+    return () => {
+      socket.off('NEW_ORDER', handleOrderEvent);
+      socket.off('ORDER_STATUS_UPDATED', handleOrderEvent);
+      socket.off('ORDER_READY_FOR_PICKUP', handleOrderEvent);
+      socket.off('DRIVER_ASSIGNED', handleOrderEvent);
+      socket.off('AVAILABLE_DELIVERY', handleOrderEvent);
+    };
+  }, [fetchOrders]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -108,6 +134,7 @@ export default function AdminOrders() {
     { key: 'pending', label: 'Pending', icon: <ClockCircleOutlined />, color: 'text-yellow-500', bg: 'bg-yellow-50' },
     { key: 'accepted', label: 'Accepted', icon: <CheckCircleOutlined />, color: 'text-blue-500', bg: 'bg-blue-50' },
     { key: 'preparing', label: 'Preparing', icon: <SyncOutlined />, color: 'text-orange-500', bg: 'bg-orange-50' },
+    { key: 'ready', label: 'Ready for Pickup', icon: <CheckCircleOutlined />, color: 'text-amber-500', bg: 'bg-amber-50' },
     { key: 'picked_up', label: 'On the way', icon: <CarOutlined />, color: 'text-indigo-500', bg: 'bg-indigo-50' },
     { key: 'delivered', label: 'Delivered', icon: <CheckCircleOutlined />, color: 'text-green-500', bg: 'bg-green-50' },
     { key: 'cancelled', label: 'Cancelled', icon: <CloseCircleOutlined />, color: 'text-red-500', bg: 'bg-red-50' },
@@ -116,12 +143,25 @@ export default function AdminOrders() {
   const getStatusBadge = (status) => {
     switch (status) {
       case 'pending':
+      case 'placed':
         return <span className="bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-[10px] font-bold uppercase"><ClockCircleOutlined className="mr-1" /> Pending</span>;
       case 'accepted':
+      case 'confirmed':
         return <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-[10px] font-bold uppercase"><CheckCircleOutlined className="mr-1" /> Accepted</span>;
       case 'preparing':
         return <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-[10px] font-bold uppercase"><SyncOutlined spin className="mr-1" /> Preparing</span>;
+      case 'ready':
+      case 'ready_for_pickup':
+        return <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-[10px] font-bold uppercase"><CheckCircleOutlined className="mr-1" /> Ready for Pickup</span>;
+      case 'assigned':
+        return <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-[10px] font-bold uppercase"><CarOutlined className="mr-1" /> Driver Assigned</span>;
+      case 'arrived':
+        return <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-[10px] font-bold uppercase"><CarOutlined className="mr-1" /> Driver Arrived</span>;
       case 'picked_up':
+      case 'out_for_delivery':
+      case 'in_transit':
+      case 'delivering':
+      case 'on_the_way':
         return <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-[10px] font-bold uppercase"><CarOutlined className="mr-1" /> On the Way</span>;
       case 'delivered':
       case 'completed':

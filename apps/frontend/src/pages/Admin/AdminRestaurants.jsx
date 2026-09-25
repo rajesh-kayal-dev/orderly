@@ -31,7 +31,6 @@ export default function AdminRestaurants() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
-  const [actionReason, setActionReason] = useState('');
 
   const fetchRestaurants = async () => {
     try {
@@ -76,7 +75,7 @@ export default function AdminRestaurants() {
     };
   }, []);
 
-  const handleStatusChange = (restaurant, nextStatus, title, actionType) => {
+  const handleStatusChange = (restaurant, nextStatus, title, _actionType) => {
     let reasonText = '';
     Modal.confirm({
       title: `${title} - ${restaurant.name}`,

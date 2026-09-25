@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from '../../api/axios';
 import { useNavigate, Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
+import socket from '../../socket';
 import {
   UserOutlined,
   ShopOutlined,
@@ -29,9 +30,9 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchStats = async () => {
+  const fetchStats = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const response = await axios.get('/admin/stats');
       if (response.data.success) {
         setStats(response.data.data);
@@ -39,13 +40,44 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error('Error fetching admin stats:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchStats();
   }, [token]);
+
+  // Real-time live auto-update via WebSocket
+  useEffect(() => {
+    socket.connect();
+    socket.emit('join', 'role_admin');
+    socket.emit('join_admin');
+
+    const handleLiveEvent = () => {
+      fetchStats(true);
+    };
+
+    socket.on('NEW_ORDER', handleLiveEvent);
+    socket.on('ORDER_STATUS_UPDATED', handleLiveEvent);
+    socket.on('PARTNER_APPROVED', handleLiveEvent);
+    socket.on('DRIVER_APPROVED', handleLiveEvent);
+    socket.on('RESTAURANT_APPROVED', handleLiveEvent);
+    socket.on('NEW_RESTAURANT_REGISTERED', handleLiveEvent);
+    socket.on('NEW_DELIVERY_PARTNER_REGISTERED', handleLiveEvent);
+    socket.on('NEW_USER_REGISTERED', handleLiveEvent);
+
+    return () => {
+      socket.off('NEW_ORDER', handleLiveEvent);
+      socket.off('ORDER_STATUS_UPDATED', handleLiveEvent);
+      socket.off('PARTNER_APPROVED', handleLiveEvent);
+      socket.off('DRIVER_APPROVED', handleLiveEvent);
+      socket.off('RESTAURANT_APPROVED', handleLiveEvent);
+      socket.off('NEW_RESTAURANT_REGISTERED', handleLiveEvent);
+      socket.off('NEW_DELIVERY_PARTNER_REGISTERED', handleLiveEvent);
+      socket.off('NEW_USER_REGISTERED', handleLiveEvent);
+    };
+  }, []);
 
   // Calculations & Fallbacks
   const totalUsers = stats?.totalUsers || 10;

@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import axios from '../../api/axios';
 import { notification, Tag, Modal } from 'antd';
 import {
   WalletOutlined,

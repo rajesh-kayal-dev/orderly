@@ -1,61 +1,80 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Outlet, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Outlet, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { logout, loginSuccess } from '../../redux/slices/authSlice';
 import { resetCartState } from '../../redux/slices/cartSlice';
+import { notification } from 'antd';
 import axios from '../../api/axios';
 import socket from '../../socket';
-import { notification } from 'antd';
 import BrandLogo from '../common/BrandLogo';
 import {
   AppstoreOutlined,
   ShoppingOutlined,
   UnorderedListOutlined,
   BarChartOutlined,
-  StarOutlined,
   WalletOutlined,
+  StarOutlined,
   SettingOutlined,
   BellOutlined,
-  CalendarOutlined,
   LogoutOutlined,
+  CalendarOutlined,
   RightOutlined,
+  ClockCircleOutlined,
   CrownOutlined,
   DownOutlined,
-  ClockCircleOutlined
+  ShopOutlined,
+  MailOutlined,
+  PhoneOutlined,
+  EnvironmentOutlined
 } from '@ant-design/icons';
+
+interface NotificationItem {
+  id: string | number;
+  title: string;
+  message?: string;
+  time: string;
+  read: boolean;
+  link?: string;
+}
 
 export default function RestaurantLayout() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, profile, token } = useSelector(state => state.auth);
-  const activeCount = useSelector(state => state.order.activeCount);
+  const { user, profile, token } = useSelector((state: any) => state.auth);
 
-  if (!token || user?.role !== 'restaurant') {
-    return <Navigate to="/login" replace />;
-  }
-
-  const [isRestaurantOpen, setIsRestaurantOpen] = useState(Boolean(profile?.is_active ?? profile?.is_open ?? true));
-  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [isRestaurantOpen, setIsRestaurantOpen] = useState<boolean>(Boolean(profile?.is_active ?? profile?.is_open ?? true));
+  const [updatingStatus, setUpdatingStatus] = useState<boolean>(false);
+  const [kitchenActiveCount, setKitchenActiveCount] = useState<number>(0);
 
   // Notification Popover State
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [notificationsList, setNotificationsList] = useState([
-    { id: 1, title: 'New Order #ORD-8821', time: '5 mins ago', read: false, link: '/restaurant/orders' },
-    { id: 2, title: 'Table #4 requested bill', time: '18 mins ago', read: false, link: '/restaurant/orders' },
-    { id: 3, title: 'Weekly payout ₹12,450 credited', time: '1 hour ago', read: true, link: '/restaurant/payouts' }
-  ]);
-  const notificationRef = useRef(null);
+  const [showNotifications, setShowNotifications] = useState<boolean>(false);
+  const [notificationsList, setNotificationsList] = useState<NotificationItem[]>([]);
+  const notificationRef = useRef<HTMLDivElement>(null);
 
   // Dynamic Date Display
-  const [currentDateString, setCurrentDateString] = useState('');
+  const [currentDateString, setCurrentDateString] = useState<string>('');
+
+  const fetchKitchenActiveCount = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await axios.get('/orders/restaurant/me');
+      if (res.data?.success && res.data?.counts) {
+        const c = res.data.counts;
+        const total = (c.pending || 0) + (c.accepted || 0) + (c.preparing || 0) + (c.ready || 0);
+        setKitchenActiveCount(total);
+      }
+    } catch {
+      // silent
+    }
+  }, [token]);
 
   useEffect(() => {
     const d = new Date();
     setCurrentDateString(d.toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-'));
   }, []);
 
-  // Sync restaurant profile status on mount
+  // Sync restaurant profile status and active orders on mount
   useEffect(() => {
     const fetchMyRestaurantStatus = async () => {
       if (!token) return;
@@ -77,15 +96,16 @@ export default function RestaurantLayout() {
     };
 
     fetchMyRestaurantStatus();
-  }, [token]);
+    fetchKitchenActiveCount();
+  }, [token, dispatch, fetchKitchenActiveCount, profile, user]);
 
   useEffect(() => {
     setIsRestaurantOpen(Boolean(profile?.is_active ?? profile?.is_open ?? true));
   }, [profile?.is_active, profile?.is_open]);
 
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
         setShowNotifications(false);
       }
     };
@@ -103,62 +123,136 @@ export default function RestaurantLayout() {
 
       // Fetch persistent notifications on mount
       axios.get('/notifications').then((res) => {
-        if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
-          const mapped = res.data.data.map((n) => ({
+        if (res.data?.success && Array.isArray(res.data.data)) {
+          const mapped = res.data.data.map((n: any) => ({
             id: n.id,
             title: n.title || n.message,
+            message: n.message,
             time: n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently',
             read: Boolean(n.read),
-            link: '/restaurant/orders'
+            link: n.link || '/restaurant'
           }));
           setNotificationsList(mapped);
         }
       }).catch(() => {});
 
-      const handleNewOrder = (data) => {
-        const orderNum = data.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'REC';
-        const newNotif = {
+      const handleNewNotification = (notif: any) => {
+        if (!notif) return;
+        const newNotif: NotificationItem = {
+          id: notif.id || Date.now(),
+          title: notif.title || notif.message,
+          message: notif.message,
+          time: notif.createdAt ? new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+          read: Boolean(notif.read),
+          link: notif.link || '/restaurant'
+        };
+        setNotificationsList(prev => [newNotif, ...prev.filter(n => n.id !== newNotif.id)]);
+        notification.info({
+          message: newNotif.title,
+          description: newNotif.message || 'You have a new update.',
+          placement: 'topRight',
+          duration: 4.5,
+        });
+      };
+
+      const handleRestaurantApproved = () => {
+        const approveNotif: NotificationItem = {
+          id: `approved-${Date.now()}`,
+          title: 'Restaurant Approved! 🎉',
+          message: 'Congratulations! Your restaurant has been approved by admin. You can now manage your menu and start accepting customer orders.',
+          time: 'Just now',
+          read: false,
+          link: '/restaurant/menu'
+        };
+        setNotificationsList(prev => [approveNotif, ...prev.filter(n => n.title !== approveNotif.title)]);
+        setIsRestaurantOpen(true);
+        dispatch(loginSuccess({
+          user: { ...user, status: 'ACTIVE', is_approved: true, is_active: true },
+          profile: { ...profile, status: 'ACTIVE', is_approved: true, is_active: true, is_open: true },
+          token
+        }));
+        notification.success({
+          message: 'Restaurant Approved! 🎉',
+          description: 'Your restaurant has been approved by admin and is now live!',
+          placement: 'topRight',
+          duration: 6,
+        });
+      };
+
+      const handleNewOrder = (data: any) => {
+        fetchKitchenActiveCount();
+        const orderNum = data?.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'REC';
+        const newNotif: NotificationItem = {
           id: Date.now(),
-          title: `New Order #${orderNum} received!${data.total ? ` (₹${data.total})` : ''}`,
+          title: `New Order #${orderNum} received!${data?.total ? ` (₹${data.total})` : ''}`,
+          message: `Customer placed an order #${orderNum}`,
           time: 'Just now',
           read: false,
           link: '/restaurant/orders'
         };
         setNotificationsList(prev => [newNotif, ...prev]);
+        notification.success({
+          message: `New Order Received! #${orderNum}`,
+          description: `Total: ₹${data?.total || 0}. Click notifications to view order details.`,
+          placement: 'topRight',
+          duration: 5,
+        });
       };
 
-      const handleStatusUpdate = (data) => {
-        const orderNum = data.orderId ? data.orderId.slice(0, 8).toUpperCase() : '';
-        const newNotif = {
+      const handleStatusUpdate = (data: any) => {
+        fetchKitchenActiveCount();
+        const orderNum = data?.orderId ? data.orderId.slice(0, 8).toUpperCase() : '';
+        const newNotif: NotificationItem = {
           id: Date.now(),
-          title: `Order #${orderNum} updated to ${data.status ? data.status.replace(/_/g, ' ') : 'new status'}`,
+          title: `Order #${orderNum} updated to ${data?.status ? data.status.replace(/_/g, ' ') : 'new status'}`,
+          message: `Status updated to ${data?.status}`,
           time: 'Just now',
           read: false,
           link: '/restaurant/orders'
         };
         setNotificationsList(prev => [newNotif, ...prev]);
+        notification.info({
+          message: `Order #${orderNum} Status Updated`,
+          description: `Status changed to ${data?.status ? data.status.replace(/_/g, ' ') : 'updated'}.`,
+          placement: 'topRight',
+          duration: 4,
+        });
       };
 
+      socket.on('NEW_NOTIFICATION', handleNewNotification);
+      socket.on('RESTAURANT_APPROVED', handleRestaurantApproved);
       socket.on('NEW_ORDER', handleNewOrder);
       socket.on('ORDER_STATUS_UPDATED', handleStatusUpdate);
+      socket.on('ORDER_READY_FOR_PICKUP', handleStatusUpdate);
+      socket.on('DRIVER_ASSIGNED', handleStatusUpdate);
+
       return () => {
+        socket.off('NEW_NOTIFICATION', handleNewNotification);
+        socket.off('RESTAURANT_APPROVED', handleRestaurantApproved);
         socket.off('NEW_ORDER', handleNewOrder);
         socket.off('ORDER_STATUS_UPDATED', handleStatusUpdate);
+        socket.off('ORDER_READY_FOR_PICKUP', handleStatusUpdate);
+        socket.off('DRIVER_ASSIGNED', handleStatusUpdate);
       };
     }
-  }, [user, profile]);
+  }, [user, profile, token, dispatch, fetchKitchenActiveCount]);
 
-  const handleStatusChange = async (newStatus) => {
+  if (!token || user?.role !== 'restaurant') {
+    return <Navigate to="/login" replace />;
+  }
+
+  const handleStatusChange = async (newStatus: boolean) => {
     if (updatingStatus) return;
     try {
       setUpdatingStatus(true);
       const response = await axios.put('/restaurants/my-profile', {
         is_active: newStatus,
-        is_open: newStatus
+        is_open: newStatus,
+        is_accepting_orders: newStatus
       });
       if (response.data?.success) {
-        const updatedProfile = response.data.data;
-        const isOpen = Boolean(updatedProfile?.is_active ?? updatedProfile?.is_open ?? newStatus);
+        const updatedProfile = response.data.data || response.data.profile;
+        const isOpen = Boolean(updatedProfile?.is_open ?? updatedProfile?.is_active ?? newStatus);
         
         setIsRestaurantOpen(isOpen);
         dispatch(loginSuccess({
@@ -167,26 +261,25 @@ export default function RestaurantLayout() {
           token
         }));
 
-        // Broadcast status update via socket so customer pages update in real-time
         if (socket) {
           socket.emit('RESTAURANT_STATUS_UPDATED', {
-            restaurantId: updatedProfile.id || profile?.id,
+            restaurantId: updatedProfile?.id || profile?.id,
             is_open: isOpen,
             is_active: isOpen,
-            name: updatedProfile.name || profile?.name || 'Restaurant'
+            name: updatedProfile?.name || profile?.name || 'Restaurant'
           });
         }
 
         notification.success({
-          title: 'Restaurant Status Updated',
+          message: 'Restaurant Status Updated',
           description: newStatus ? 'Your restaurant is now OPEN for orders.' : 'Your restaurant is now CLOSED for orders.',
           placement: 'topRight'
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating status:', error);
       notification.error({
-        title: 'Status Update Failed',
+        message: 'Status Update Failed',
         description: error.response?.data?.message || 'Failed to update restaurant status.',
         placement: 'topRight'
       });
@@ -203,10 +296,12 @@ export default function RestaurantLayout() {
 
   const markAllRead = () => {
     setNotificationsList(prev => prev.map(n => ({ ...n, read: true })));
+    axios.post('/notifications/read-all').catch(() => {});
   };
 
   const clearAllNotifications = () => {
     setNotificationsList([]);
+    axios.delete('/notifications').catch(() => {});
   };
 
   const unreadCount = notificationsList.filter(n => !n.read).length;
@@ -214,7 +309,7 @@ export default function RestaurantLayout() {
 
   const navItems = [
     { label: 'Dashboard', path: '/restaurant', icon: <AppstoreOutlined /> },
-    { label: 'Orders', path: '/restaurant/orders', icon: <ShoppingOutlined />, badge: activeCount },
+    { label: 'Orders', path: '/restaurant/orders', icon: <ShoppingOutlined />, badge: kitchenActiveCount > 0 ? kitchenActiveCount : undefined },
     { label: 'Menu Catalog', path: '/restaurant/menu', icon: <UnorderedListOutlined /> },
     { label: 'Analytics', path: '/restaurant/summary', icon: <BarChartOutlined /> },
     { label: 'Reviews', path: '/restaurant/reviews', icon: <StarOutlined /> },
@@ -232,8 +327,12 @@ export default function RestaurantLayout() {
     return 'Restaurant Dashboard';
   };
 
-  const userName = user?.full_name || user?.email?.split('@')[0] || 'Rajesh Kayal';
-  const userInitial = userName.charAt(0).toUpperCase();
+  const accountName = user?.full_name || 'Restaurant Owner';
+  const restaurantName = profile?.name || user?.restaurant_name || (user?.full_name ? `${user.full_name}'s Restaurant` : 'Restaurant');
+  const emailId = user?.email || profile?.owner_email || 'restaurant@ofds.com';
+  const phoneNo = user?.phone_number || profile?.phone_number || '';
+  const addressText = profile?.address || '';
+  const accountInitial = ((accountName || 'RO').trim().split(/\s+/).map((n: string) => n[0]).join('').slice(0, 2)).toUpperCase();
 
   return (
     <div className="flex h-screen bg-[#F8FAFC] overflow-hidden font-sans">
@@ -251,22 +350,50 @@ export default function RestaurantLayout() {
           {/* User Account Card */}
           <Link
             to="/restaurant/settings"
-            className="flex items-center justify-between p-2.5 mb-4 rounded-xl bg-[#1E293B]/80 hover:bg-[#1E293B] border border-white/5 transition-all group cursor-pointer"
+            className="block p-3 mb-4 rounded-2xl bg-[#1E293B]/90 hover:bg-[#1E293B] border border-white/10 hover:border-orange-500/40 transition-all group cursor-pointer shadow-md"
           >
-            <div className="flex items-center gap-2.5 overflow-hidden">
-              <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-bold text-xs text-white border border-white/10 shrink-0">
-                {userInitial}
+            <div className="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-white/5">
+              <div className="flex items-center gap-2.5 overflow-hidden">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center font-black text-xs text-white shadow-xs shrink-0 select-none tracking-wider">
+                  {accountInitial}
+                </div>
+                <div className="truncate">
+                  <p className="text-xs font-bold text-slate-100 truncate group-hover:text-orange-400 transition-colors">
+                    {accountName}
+                  </p>
+                  <p className="text-[10px] text-orange-400 font-semibold truncate flex items-center gap-1">
+                    <span>●</span> Restaurant Owner
+                  </p>
+                </div>
               </div>
-              <div className="truncate">
-                <p className="text-xs font-bold text-slate-100 truncate group-hover:text-orange-400 transition-colors">
-                  {userName}
-                </p>
-                <p className="text-[10px] text-slate-400 truncate font-medium">
-                  Restaurant Account
-                </p>
-              </div>
+              <RightOutlined className="text-[10px] text-slate-400 group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0" />
             </div>
-            <RightOutlined className="text-[10px] text-slate-400 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+
+            <div className="space-y-1 text-[10.5px] text-slate-300 font-medium">
+              <div className="flex items-center gap-1.5 text-slate-200 font-bold truncate">
+                <ShopOutlined className="text-orange-400 text-xs shrink-0" />
+                <span className="truncate" title={restaurantName}>{restaurantName}</span>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-slate-400 truncate">
+                <MailOutlined className="text-slate-500 text-[10px] shrink-0" />
+                <span className="truncate text-[10px]" title={emailId}>{emailId}</span>
+              </div>
+
+              {phoneNo && (
+                <div className="flex items-center gap-1.5 text-slate-400 truncate">
+                  <PhoneOutlined className="text-slate-500 text-[10px] shrink-0" />
+                  <span className="truncate text-[10px]">{phoneNo}</span>
+                </div>
+              )}
+
+              {addressText && (
+                <div className="flex items-center gap-1.5 text-slate-400 truncate">
+                  <EnvironmentOutlined className="text-slate-500 text-[10px] shrink-0" />
+                  <span className="truncate text-[10px]" title={addressText}>{addressText}</span>
+                </div>
+              )}
+            </div>
           </Link>
 
           {/* Navigation Links */}
@@ -428,6 +555,7 @@ export default function RestaurantLayout() {
                           key={item.id}
                           onClick={() => {
                             setNotificationsList(prev => prev.map(n => n.id === item.id ? { ...n, read: true } : n));
+                            if (item.id) axios.patch(`/notifications/${item.id}/read`).catch(() => {});
                             setShowNotifications(false);
                             navigate(item.link || '/restaurant/orders');
                           }}
@@ -435,12 +563,17 @@ export default function RestaurantLayout() {
                             item.read ? 'bg-slate-50/50 border-slate-100 text-slate-500' : 'bg-orange-50/40 border-orange-100/80 text-slate-800 font-semibold'
                           }`}
                         >
-                          <div className="space-y-0.5 flex-1">
+                          <div className="space-y-0.5 flex-1 min-w-0">
                             <div className="flex items-center justify-between">
-                              <p className="text-xs font-bold leading-tight group-hover:text-orange-600 transition-colors">{item.title}</p>
-                              <span className="text-[9px] text-orange-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity ml-1">View ➔</span>
+                              <p className="text-xs font-bold leading-tight group-hover:text-orange-600 transition-colors truncate">{item.title}</p>
+                              <span className="text-[9px] text-orange-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity ml-1 shrink-0">View ➔</span>
                             </div>
-                            <p className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                            {item.message && item.message !== item.title && (
+                              <p className="text-[10.5px] text-slate-500 font-normal leading-tight line-clamp-2 mt-0.5">
+                                {item.message}
+                              </p>
+                            )}
+                            <p className="text-[10px] text-slate-400 font-medium flex items-center gap-1 mt-0.5">
                               <ClockCircleOutlined className="text-[9px]" /> {item.time}
                             </p>
                           </div>

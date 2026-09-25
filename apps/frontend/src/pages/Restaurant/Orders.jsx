@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSelector } from 'react-redux';
 import axios from '../../api/axios';
 import { notification } from 'antd';
@@ -19,13 +19,14 @@ const getTodayDateString = () => {
 };
 
 export default function RestaurantOrders() {
-  const { profile, user } = useSelector(state => state.auth);
+  const { profile } = useSelector(state => state.auth);
 
   const [orders, setOrders] = useState([]);
   const [counts, setCounts] = useState({
     pending: 0,
     accepted: 0,
     preparing: 0,
+    ready: 0,
     picked_up: 0,
     delivered: 0,
     cancelled: 0
@@ -35,7 +36,7 @@ export default function RestaurantOrders() {
   const [selectedDate, setSelectedDate] = useState(getTodayDateString());
   const [loading, setLoading] = useState(true);
 
-  const fetchOrders = async (status = selectedStatus, date = selectedDate) => {
+  const fetchOrders = useCallback(async (status = selectedStatus, date = selectedDate) => {
     try {
       setLoading(true);
 
@@ -65,7 +66,7 @@ export default function RestaurantOrders() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedStatus, selectedDate]);
 
   useEffect(() => {
     if (profile?.id) {
@@ -91,7 +92,7 @@ export default function RestaurantOrders() {
         socket.off('ORDER_STATUS_UPDATED', handleStatusUpdate);
       };
     }
-  }, [profile, user, selectedStatus]);
+  }, [profile?.id, fetchOrders]);
 
   const handleStatusChange = (status) => {
     setSelectedStatus(status);
@@ -126,6 +127,7 @@ export default function RestaurantOrders() {
   const getStatusBadge = (status) => {
     switch (status) {
       case 'pending':
+      case 'placed':
         return (
           <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold uppercase">
             <ClockCircleOutlined className="mr-1" /> Pending
@@ -133,6 +135,7 @@ export default function RestaurantOrders() {
         );
 
       case 'accepted':
+      case 'confirmed':
         return (
           <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold uppercase">
             <CheckCircleOutlined className="mr-1" /> Accepted
@@ -146,10 +149,36 @@ export default function RestaurantOrders() {
           </span>
         );
 
+      case 'ready':
+      case 'ready_for_pickup':
+        return (
+          <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-bold uppercase">
+            <CheckCircleOutlined className="mr-1" /> Ready for Pickup
+          </span>
+        );
+
+      case 'assigned':
+        return (
+          <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-bold uppercase">
+            <CarOutlined className="mr-1" /> Driver Assigned
+          </span>
+        );
+
+      case 'arrived':
+        return (
+          <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold uppercase">
+            <CarOutlined className="mr-1" /> Driver Arrived
+          </span>
+        );
+
       case 'picked_up':
+      case 'out_for_delivery':
+      case 'in_transit':
+      case 'delivering':
+      case 'on_the_way':
         return (
           <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-bold uppercase">
-            <CarOutlined className="mr-1" /> On the Way
+            <CarOutlined className="mr-1" /> Out for Delivery
           </span>
         );
 
@@ -386,7 +415,7 @@ export default function RestaurantOrders() {
                         </button>
                       )}
 
-                      {(order.status === 'preparing' || order.status === 'assigned') && (
+                      {(order.status === 'preparing') && (
                         <button
                           onClick={() => updateStatus(order.id, 'ready')}
                           className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-all hover:scale-105"
@@ -395,9 +424,15 @@ export default function RestaurantOrders() {
                         </button>
                       )}
 
-                      {order.status === 'ready' && (
-                        <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-bold bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
-                          <CheckCircleOutlined /> Ready for Pickup
+                      {(order.status === 'ready' || order.status === 'ready_for_pickup') && (
+                        <div className="flex items-center gap-1.5 text-xs text-amber-700 font-bold bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                          <CheckCircleOutlined /> Awaiting Pickup
+                        </div>
+                      )}
+
+                      {order.status === 'assigned' && (
+                        <div className="flex items-center gap-1.5 text-xs text-purple-700 font-bold bg-purple-50 px-3 py-1 rounded-full border border-purple-200">
+                          <CarOutlined /> Driver Assigned
                         </div>
                       )}
 
@@ -407,15 +442,21 @@ export default function RestaurantOrders() {
                         </div>
                       )}
 
+                      {(order.status === 'picked_up' || order.status === 'out_for_delivery' || order.status === 'in_transit' || order.status === 'delivering' || order.status === 'on_the_way') && (
+                        <div className="flex items-center gap-1.5 text-xs text-indigo-700 font-bold bg-indigo-50 px-3 py-1 rounded-full border border-indigo-200">
+                          <CarOutlined /> Out for Delivery
+                        </div>
+                      )}
+
                       {(order.status === 'delivered' || order.status === 'completed') && (
-                        <div className="text-xs text-green-600 font-bold bg-green-50 px-3 py-1 rounded-full border border-green-100">
-                          Completed
+                        <div className="text-xs text-green-600 font-bold bg-green-50 px-3 py-1 rounded-full border border-green-100 flex items-center gap-1">
+                          <CheckCircleOutlined /> Completed
                         </div>
                       )}
 
                       {order.status === 'cancelled' && (
-                        <div className="text-xs text-red-500 font-bold bg-red-50 px-3 py-1 rounded-full border border-red-100">
-                          Cancelled
+                        <div className="text-xs text-red-500 font-bold bg-red-50 px-3 py-1 rounded-full border border-red-100 flex items-center gap-1">
+                          <CloseCircleOutlined /> Cancelled
                         </div>
                       )}
                     </div>
@@ -431,7 +472,7 @@ export default function RestaurantOrders() {
               <ClockCircleOutlined className="text-3xl" />
             </div>
             <h3 className="text-gray-800 font-bold mb-1">
-              No {selectedStatus} orders
+              No {selectedStatus === 'picked_up' ? 'on the way' : selectedStatus === 'delivered' ? 'completed' : selectedStatus} orders
             </h3>
             <p className="text-gray-400 text-sm">
               When new orders arrive, they will appear here.
