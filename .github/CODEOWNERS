@@ -1,1 +1,25 @@
+# Orderly Repository Code Owners
+# Each line defines file patterns and their responsible code owners.
+
+# Global default
 * @rajesh-kayal-dev
+
+# Applications
+/apps/ @rajesh-kayal-dev
+
+# Microservices
+/services/ @rajesh-kayal-dev
+
+# Shared packages
+/packages/ @rajesh-kayal-dev
+
+# Infrastructure & Deployment
+/infrastructure/ @rajesh-kayal-dev
+/infra/ @rajesh-kayal-dev
+
+# Documentation & Architecture
+/docs/ @rajesh-kayal-dev
+/*.md @rajesh-kayal-dev
+
+# GitHub Configuration & Workflows
+/.github/ @rajesh-kayal-dev

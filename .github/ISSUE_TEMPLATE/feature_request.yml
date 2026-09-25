@@ -1,0 +1,61 @@
+name: "Feature Request"
+description: "Propose a new feature, capability, or architectural enhancement for Orderly"
+title: "[FEATURE]: "
+labels: ["enhancement", "proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Suggest an enhancement or new feature for the Orderly food delivery platform.
+
+  - type: textarea
+    id: feature-description
+    attributes:
+      label: Feature Description
+      description: A clear and concise description of the proposed feature and why it is needed.
+      placeholder: Describe the problem this feature solves...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: target-domain
+    attributes:
+      label: Target Domain / Service
+      description: Select the primary domain affected by this proposal.
+      options:
+        - "Customer Experience (Browsing / Ordering / Tracking)"
+        - "Restaurant Portal (Menu / Orders / Kitchen Flow)"
+        - "Delivery Partner (Assignment / GPS / Payouts)"
+        - "Admin & Operational Management"
+        - "Payment & Pricing Engine"
+        - "Event Backbone & Messaging (Kafka)"
+        - "Infrastructure & Developer Tooling"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution & Workflow
+      description: Outline the expected technical approach, UI workflow, or API contracts.
+      placeholder: Detail the solution design...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives-considered
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or features you considered and why you chose this one.
+      placeholder: Describe alternatives...
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add mockups, architectural notes, or reference links.
+      placeholder: Additional references...
+    validations:
+      required: false

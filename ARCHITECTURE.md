@@ -8,42 +8,45 @@ The system separates business domains into independent services while keeping th
 
 ### Core architecture
 
-```text
-                    ┌─────────────────────┐
-                    │   React / Vite Web   │
-                    │      :3000           │
-                    └──────────┬──────────┘
-                               │ HTTP
-                               ▼
-                    ┌─────────────────────┐
-                    │       Gateway       │
-                    │       :5001         │
-                    └──────────┬──────────┘
-                               │
-          ┌────────────────────┼────────────────────┐
-          │                    │                    │
-          ▼                    ▼                    ▼
-     Identity :3001      Restaurant :3003      Order :3004
-          │                    │                    │
-          │                    │                    │
-          └──────────────┬─────┴────────────┬───────┘
-                         │                  │
-                         ▼                  ▼
-                  Payment :3005       Delivery :3006
-                         │                  │
-                         └──────────┬───────┘
-                                    ▼
-                           Notification :3007
+```mermaid
+flowchart TB
+    Frontend["React + Vite Frontend"]
+    Gateway["API Gateway"]
 
-                    ┌─────────────────────┐
-                    │       Kafka         │
-                    │  Async event bus     │
-                    └─────────────────────┘
+    subgraph Services["Domain Microservices"]
+        Identity["Identity Service"]
+        Restaurant["Restaurant Service"]
+        Order["Order Service"]
+        Payment["Payment Service"]
+        Delivery["Delivery Service"]
+        Notification["Notification Service"]
+    end
 
-                    ┌─────────────────────┐
-                    │    PostgreSQL       │
-                    │ Service-owned data  │
-                    └─────────────────────┘
+    Kafka[("Apache Kafka Event Backbone")]
+    Postgres[("Service-Owned PostgreSQL Databases")]
+
+    Frontend -->|HTTP / WebSocket| Gateway
+
+    Gateway -->|REST / Proxy| Identity
+    Gateway -->|REST / Proxy| Restaurant
+    Gateway -->|REST / Proxy| Order
+    Gateway -->|REST / Proxy| Payment
+    Gateway -->|REST / Proxy| Delivery
+    Gateway -->|REST / Proxy| Notification
+
+    Identity -. Asynchronous Events .-> Kafka
+    Restaurant -. Asynchronous Events .-> Kafka
+    Order -. Asynchronous Events .-> Kafka
+    Payment -. Asynchronous Events .-> Kafka
+    Delivery -. Asynchronous Events .-> Kafka
+    Notification -. Asynchronous Events .-> Kafka
+
+    Identity --> Postgres
+    Restaurant --> Postgres
+    Order --> Postgres
+    Payment --> Postgres
+    Delivery --> Postgres
+    Notification --> Postgres
 ```
 
 ## 2. Repository Structure

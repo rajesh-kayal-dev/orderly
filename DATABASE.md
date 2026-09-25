@@ -12,24 +12,14 @@ This keeps domain boundaries explicit and reduces coupling.
 
 ## 2. Data Ownership Model
 
-```text
-Identity Service
-    └── Identity / account data
-
-Restaurant Service
-    └── Restaurant / menu data
-
-Order Service
-    └── Cart / order data
-
-Payment Service
-    └── Payment data
-
-Delivery Service
-    └── Delivery partner / delivery data
-
-Notification Service
-    └── Notification data
+```mermaid
+flowchart TB
+    IdentityService["Identity Service"] --> IdentityData["Identity / account data"]
+    RestaurantService["Restaurant Service"] --> RestaurantData["Restaurant / menu data"]
+    OrderService["Order Service"] --> OrderData["Cart / order data"]
+    PaymentService["Payment Service"] --> PaymentData["Payment data"]
+    DeliveryService["Delivery Service"] --> DeliveryData["Delivery partner / delivery data"]
+    NotificationService["Notification Service"] --> NotificationData["Notification data"]
 ```
 
 The exact schema and table names are defined by each service's Prisma schema and migrations.
