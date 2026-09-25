@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { logout } from '../../redux/slices/authSlice';
@@ -20,25 +20,34 @@ import {
   BellOutlined,
   LogoutOutlined,
   CrownOutlined,
-  DownOutlined,
   RightOutlined,
   ClockCircleOutlined,
   StarOutlined
 } from '@ant-design/icons';
 
+interface AdminNotificationItem {
+  id: string | number;
+  title: string;
+  link?: string;
+  type?: string;
+  time: string;
+  read: boolean;
+  message?: string;
+}
+
 export default function AdminLayout() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, isAuthenticated } = useSelector(state => state.auth);
+  const { user, isAuthenticated } = useSelector((state: any) => state.auth);
 
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [notificationsList, setNotificationsList] = useState([]);
-  const [activeOrdersCount, setActiveOrdersCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState<boolean>(false);
+  const [notificationsList, setNotificationsList] = useState<AdminNotificationItem[]>([]);
+  const [activeOrdersCount, setActiveOrdersCount] = useState<number>(0);
 
-  const notificationRef = useRef(null);
+  const notificationRef = useRef<HTMLDivElement>(null);
 
-  const fetchActiveOrdersCount = async () => {
+  const fetchActiveOrdersCount = useCallback(async () => {
     try {
       const res = await axios.get('/admin/orders?limit=1');
       if (res.data?.success && res.data?.counts) {
@@ -46,15 +55,15 @@ export default function AdminLayout() {
         const totalActive = (c.pending || 0) + (c.accepted || 0) + (c.preparing || 0) + (c.ready || 0) + (c.picked_up || 0);
         setActiveOrdersCount(totalActive);
       }
-    } catch (e) {
+    } catch {
       // silent
     }
-  };
+  }, []);
 
   // Close notification popover on outside click
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
         setShowNotifications(false);
       }
     };
@@ -70,13 +79,12 @@ export default function AdminLayout() {
       socket.emit('join_admin');
       socket.emit('join', 'role_admin');
 
-      // Fetch active orders count on mount
       fetchActiveOrdersCount();
 
       // Fetch persistent admin notifications on mount
       axios.get('/notifications').then((res) => {
         if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
-          const mapped = res.data.data.map((n) => ({
+          const mapped = res.data.data.map((n: any) => ({
             id: n.id,
             title: n.title || n.message,
             link: n.link || (n.type === 'Driver' || n.role === 'delivery_partner' ? '/admin/drivers' : n.type === 'Restaurant' || n.role === 'restaurant' ? '/admin/restaurants' : n.type === 'Customer' || n.role === 'customer' ? '/admin/users' : '/admin'),
@@ -88,11 +96,11 @@ export default function AdminLayout() {
         }
       }).catch(() => {});
 
-      const handleNewOrder = (data) => {
+      const handleNewOrder = (data: any) => {
         fetchActiveOrdersCount();
-        const notif = {
+        const notif: AdminNotificationItem = {
           id: Date.now(),
-          title: `New Platform Order #${data.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'ORD'} received!`,
+          title: `New Platform Order #${data?.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'ORD'} received!`,
           link: '/admin/orders',
           type: 'Order',
           time: 'Just now',
@@ -101,7 +109,7 @@ export default function AdminLayout() {
         setNotificationsList(prev => [notif, ...prev]);
         notification.info({
           message: notif.title,
-          description: `Customer placed order for ₹${data.total || 0}`,
+          description: `Customer placed order for ₹${data?.total || 0}`,
           placement: 'topRight',
           duration: 4.5,
         });
@@ -111,15 +119,15 @@ export default function AdminLayout() {
         fetchActiveOrdersCount();
       };
 
-      const handleNewPartner = (data) => {
-        const isDriver = data.type === 'Driver' || data.role === 'delivery_partner';
-        const notif = {
+      const handleNewPartner = (data: any) => {
+        const isDriver = data?.type === 'Driver' || data?.role === 'delivery_partner';
+        const notif: AdminNotificationItem = {
           id: Date.now(),
           title: isDriver 
-            ? `Delivery partner "${data.name || ''}" submitted verification documents`
-            : `New Restaurant "${data.name || ''}" registered`,
-          link: data.link || (isDriver ? '/admin/drivers' : '/admin/restaurants'),
-          type: data.type || (isDriver ? 'Driver' : 'Restaurant'),
+            ? `Delivery partner "${data?.name || ''}" submitted verification documents`
+            : `New Restaurant "${data?.name || ''}" registered`,
+          link: data?.link || (isDriver ? '/admin/drivers' : '/admin/restaurants'),
+          type: data?.type || (isDriver ? 'Driver' : 'Restaurant'),
           time: 'Just now',
           read: false
         };
@@ -132,10 +140,10 @@ export default function AdminLayout() {
         });
       };
 
-      const handleNewUser = (data) => {
-        const notif = {
+      const handleNewUser = (data: any) => {
+        const notif: AdminNotificationItem = {
           id: Date.now(),
-          title: `New Customer "${data.full_name || data.fullName || data.name || 'User'}" joined Orderly`,
+          title: `New Customer "${data?.full_name || data?.fullName || data?.name || 'User'}" joined Orderly`,
           link: '/admin/users',
           type: 'Customer',
           time: 'Just now',
@@ -149,23 +157,23 @@ export default function AdminLayout() {
         });
       };
 
-      const handleNewNotification = (notif) => {
-        const t = (notif.title || notif.message || '').toLowerCase();
-        let targetLink = notif.link;
+      const handleNewNotification = (notif: any) => {
+        const t = (notif?.title || notif?.message || '').toLowerCase();
+        let targetLink = notif?.link;
         if (!targetLink) {
-          if (t.includes('delivery') || t.includes('driver') || notif.type === 'Driver') targetLink = '/admin/drivers';
-          else if (t.includes('restaurant') || notif.type === 'Restaurant') targetLink = '/admin/restaurants';
-          else if (t.includes('customer') || t.includes('user') || notif.type === 'Customer') targetLink = '/admin/users';
-          else if (t.includes('order') || notif.type === 'Order') targetLink = '/admin/orders';
+          if (t.includes('delivery') || t.includes('driver') || notif?.type === 'Driver') targetLink = '/admin/drivers';
+          else if (t.includes('restaurant') || notif?.type === 'Restaurant') targetLink = '/admin/restaurants';
+          else if (t.includes('customer') || t.includes('user') || notif?.type === 'Customer') targetLink = '/admin/users';
+          else if (t.includes('order') || notif?.type === 'Order') targetLink = '/admin/orders';
           else if (t.includes('feedback')) targetLink = '/admin/feedback';
           else targetLink = '/admin';
         }
 
-        const newN = {
-          id: notif.id || Date.now(),
-          title: notif.title || notif.message,
+        const newN: AdminNotificationItem = {
+          id: notif?.id || Date.now(),
+          title: notif?.title || notif?.message,
           link: targetLink,
-          type: notif.type,
+          type: notif?.type,
           time: 'Just now',
           read: false
         };
@@ -173,16 +181,16 @@ export default function AdminLayout() {
         setNotificationsList(prev => [newN, ...prev]);
         notification.info({
           message: newN.title,
-          description: notif.message || 'New admin alert received.',
+          description: notif?.message || 'New admin alert received.',
           placement: 'topRight',
           duration: 4.5,
         });
       };
 
-      const handleNewFeedback = (fb) => {
-        const notif = {
+      const handleNewFeedback = (fb: any) => {
+        const notif: AdminNotificationItem = {
           id: Date.now(),
-          title: `New Feedback received: "${fb.sentiment}" from ${fb.customer_name || 'Customer'}`,
+          title: `New Feedback received: "${fb?.sentiment}" from ${fb?.customer_name || 'Customer'}`,
           link: '/admin/feedback',
           type: 'Feedback',
           time: 'Just now',
@@ -220,7 +228,7 @@ export default function AdminLayout() {
         socket.off('NEW_FEEDBACK', handleNewFeedback);
       };
     }
-  }, [user]);
+  }, [user, fetchActiveOrdersCount]);
 
   // Security guard: redirect if not admin
   if (!isAuthenticated || user?.role?.toLowerCase() !== 'admin') {
@@ -243,7 +251,7 @@ export default function AdminLayout() {
     axios.delete('/notifications').catch(() => {});
   };
 
-  const handleNotificationClick = (item) => {
+  const handleNotificationClick = (item: AdminNotificationItem) => {
     setNotificationsList(prev => prev.map(n => n.id === item.id ? { ...n, read: true } : n));
     if (item.id) {
       axios.patch(`/notifications/${item.id}/read`).catch(() => {});
@@ -316,10 +324,6 @@ export default function AdminLayout() {
                     >
                       {item.badge}
                     </span>
-                  )}
-
-                  {item.hasDropdown && (
-                    <DownOutlined className={`text-[9px] ${isActive ? 'text-white' : 'text-slate-500'}`} />
                   )}
                 </Link>
               );

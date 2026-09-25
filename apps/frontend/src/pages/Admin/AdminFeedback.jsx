@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from '../../api/axios';
 import socket from '../../socket';
 import { notification, Tag, Input, Select, Button, Spin, Empty } from 'antd';
@@ -25,7 +25,7 @@ export default function AdminFeedback() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sentimentFilter, setSentimentFilter] = useState('ALL');
 
-  const fetchFeedback = async () => {
+  const fetchFeedback = useCallback(async () => {
     try {
       setLoading(true);
       const res = await axios.get('/admin/feedback', {
@@ -50,11 +50,11 @@ export default function AdminFeedback() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [sentimentFilter, searchTerm]);
 
   useEffect(() => {
     fetchFeedback();
-  }, [sentimentFilter]);
+  }, [fetchFeedback]);
 
   // Realtime Socket listener for new feedback
   useEffect(() => {
@@ -151,7 +151,7 @@ export default function AdminFeedback() {
         <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Feedbacks</span>
           <div className="text-2xl font-black text-slate-900 mt-1">{summary.total}</div>
-          <div className="text-[10px] text-slate-400 mt-0.5">Delivered orders reviewed</div>
+          <div className="text-[10px] text-slate-400 mt-0.5">{happyPercentage}% positive sentiment</div>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-xs">

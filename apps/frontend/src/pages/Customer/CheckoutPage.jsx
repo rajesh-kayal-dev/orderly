@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import axios from '../../api/axios';
@@ -55,7 +55,7 @@ export default function CheckoutPage() {
   const [successOrder, setSuccessOrder] = useState(null);
 
   // Helper to ensure an active guest session exists if user is guest
-  const ensureGuestSession = async () => {
+  const ensureGuestSession = useCallback(async () => {
     if (!isGuest) return null;
     let guestToken = sessionStorage.getItem('guest_token') || localStorage.getItem('guest_token');
     if (!guestToken) {
@@ -72,10 +72,10 @@ export default function CheckoutPage() {
       }
     }
     return guestToken;
-  };
+  }, [isGuest]);
 
   // Read applied coupon from sessionStorage
-  const [appliedCoupon, setAppliedCoupon] = useState(() => {
+  const [appliedCoupon] = useState(() => {
     try {
       const saved = sessionStorage.getItem('orderly_applied_coupon');
       return saved ? JSON.parse(saved) : null;
@@ -124,7 +124,7 @@ export default function CheckoutPage() {
     return () => {
       // cleanup if needed
     };
-  }, [isGuest]);
+  }, [isGuest, ensureGuestSession]);
 
   // Populate address and contact from profile if logged in
   useEffect(() => {
@@ -146,25 +146,19 @@ export default function CheckoutPage() {
         const addr = profile.Addresses[0];
         setAddress(addr.street || addr.address_line1 || '');
         setSelectedAddressId(addr.id || '');
-      } else if (!address) {
-        setAddress('Flat 402, Lotus Tower, Vijay Nagar, Indore, MP - 452010');
-        setSelectedAddressId('default-loc-id');
+      } else {
+        setAddress(prev => prev || 'Flat 402, Lotus Tower, Vijay Nagar, Indore, MP - 452010');
+        setSelectedAddressId(prev => prev || 'default-loc-id');
       }
 
       setFullName(user?.full_name || profile?.full_name || 'Valued Customer');
       setPhone(prevPhone => prevPhone || user?.phone_number || profile?.phone_number || '9876543210');
       setEmail(user?.email || '');
     } else {
-      if (!address) {
-        setAddress('Flat 402, Lotus Tower, Vijay Nagar, Indore, MP - 452010');
-        setSelectedAddressId('default-loc-id');
-      }
-      if (!phone) {
-        setPhone('9876543210');
-      }
-      if (!fullName) {
-        setFullName('Valued Guest');
-      }
+      setAddress(prev => prev || 'Flat 402, Lotus Tower, Vijay Nagar, Indore, MP - 452010');
+      setSelectedAddressId(prev => prev || 'default-loc-id');
+      setPhone(prev => prev || '9876543210');
+      setFullName(prev => prev || 'Valued Guest');
     }
   }, [profile, user, isGuest]);
 

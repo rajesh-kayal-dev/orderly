@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
 import axios from '../../api/axios';
 import socket from '../../socket';
 import SectionHeader from '../../components/common/SectionHeader';
@@ -24,7 +23,6 @@ const categories = [
 ];
 
 export default function Dashboard() {
-  const { user } = useSelector(state => state.auth);
   const [restaurants, setRestaurants] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();

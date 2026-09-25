@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSelector } from 'react-redux';
 import axios from '../../api/axios';
 import { notification } from 'antd';
@@ -19,7 +19,7 @@ const getTodayDateString = () => {
 };
 
 export default function RestaurantOrders() {
-  const { profile, user } = useSelector(state => state.auth);
+  const { profile } = useSelector(state => state.auth);
 
   const [orders, setOrders] = useState([]);
   const [counts, setCounts] = useState({
@@ -36,7 +36,7 @@ export default function RestaurantOrders() {
   const [selectedDate, setSelectedDate] = useState(getTodayDateString());
   const [loading, setLoading] = useState(true);
 
-  const fetchOrders = async (status = selectedStatus, date = selectedDate) => {
+  const fetchOrders = useCallback(async (status = selectedStatus, date = selectedDate) => {
     try {
       setLoading(true);
 
@@ -66,7 +66,7 @@ export default function RestaurantOrders() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedStatus, selectedDate]);
 
   useEffect(() => {
     if (profile?.id) {
@@ -92,7 +92,7 @@ export default function RestaurantOrders() {
         socket.off('ORDER_STATUS_UPDATED', handleStatusUpdate);
       };
     }
-  }, [profile, user, selectedStatus]);
+  }, [profile?.id, fetchOrders]);
 
   const handleStatusChange = (status) => {
     setSelectedStatus(status);

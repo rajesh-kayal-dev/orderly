@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { logout } from '../../redux/slices/authSlice';
 import { resetCartState } from '../../redux/slices/cartSlice';
@@ -82,7 +82,6 @@ const IconClose = () => (
 
 export default function Navbar({ activeOrdersCount = 0 }) {
   const dispatch = useDispatch();
-  const navigate = useNavigate();
   const location = useLocation();
   const { user, profile, isAuthenticated } = useSelector((state) => state.auth);
   const { items } = useSelector((state) => state.cart);
@@ -201,8 +200,6 @@ export default function Navbar({ activeOrdersCount = 0 }) {
     { name: 'Partners',    path: '/customer/partners',    icon: <IconPartner /> },
     { name: 'Tracking',    path: '/customer/tracking',    icon: <IconClock />, badge: activeOrdersCount > 0 ? activeOrdersCount : null },
   ];
-
-  const userName = user?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User';
 
   return (
     <nav className="fixed top-0 w-full z-50 bg-white border-b border-neutral-100 shadow-sm">

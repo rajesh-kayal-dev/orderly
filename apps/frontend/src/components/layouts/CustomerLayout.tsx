@@ -7,10 +7,14 @@ import socket from '../../socket';
 import Navbar from '../layout/Navbar';
 import Footer from '../layout/Footer';
 
-export default function CustomerLayout({ children }) {
+interface CustomerLayoutProps {
+  children?: React.ReactNode;
+}
+
+export default function CustomerLayout({ children }: CustomerLayoutProps = {}) {
   const location = useLocation();
-  const { token, user } = useSelector((state) => state.auth);
-  const [activeOrdersCount, setActiveOrdersCount] = useState(0);
+  const { token, user } = useSelector((state: any) => state.auth);
+  const [activeOrdersCount, setActiveOrdersCount] = useState<number>(0);
 
   useEffect(() => {
     const fetchActiveOrdersCount = async () => {
@@ -23,7 +27,7 @@ export default function CustomerLayout({ children }) {
         const response = await axios.get('/orders/me');
         if (response.data.success) {
           const activeOrders = (response.data.data || []).filter(
-            (order) => order.status !== 'completed' && order.status !== 'delivered' && order.status !== 'cancelled'
+            (order: any) => order.status !== 'completed' && order.status !== 'delivered' && order.status !== 'cancelled'
           );
           setActiveOrdersCount(activeOrders.length);
         }
@@ -41,7 +45,7 @@ export default function CustomerLayout({ children }) {
       socket.emit('join', 'role_customer');
     }
 
-    const handleOrderUpdated = (data) => {
+    const handleOrderUpdated = (data: any) => {
       fetchActiveOrdersCount();
       if (data && data.status) {
         const orderNum = data.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'your order';
@@ -55,7 +59,7 @@ export default function CustomerLayout({ children }) {
       }
     };
 
-    const handleNewNotification = (data) => {
+    const handleNewNotification = (data: any) => {
       if (!data) return;
       notification.info({
         message: data.title || 'Orderly Update',

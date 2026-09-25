@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from '../../api/axios';
@@ -78,7 +78,7 @@ function MapRecenter({ bounds }) {
   return null;
 }
 
-export const getStatusLevel = (statusStr) => {
+const getStatusLevel = (statusStr) => {
   const st = (statusStr || 'placed').toLowerCase();
   if (st === 'cancelled') return 0;
   if (st === 'payment_pending' || st === 'pending' || st === 'placed') return 1;
@@ -173,12 +173,11 @@ const interpolatePosition = (routePoints, progress) => {
 };
 
 export default function OrderTracking() {
-  const { token, user } = useSelector((state) => state.auth);
+  const { token } = useSelector((state) => state.auth);
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const urlOrderId = searchParams.get('orderId') || sessionStorage.getItem('last_guest_order_id');
-  const guestToken = sessionStorage.getItem('guest_token') || localStorage.getItem('guest_token');
 
   const [activeOrders, setActiveOrders] = useState([]);
   const [selectedOrderIndex, setSelectedOrderIndex] = useState(0);
@@ -198,8 +197,8 @@ export default function OrderTracking() {
   const [reviewedOrders, setReviewedOrders] = useState({});
   const promptedOrdersRef = React.useRef(new Set());
 
-  const openFeedbackModal = async (orderToReview) => {
-    const targetOrder = orderToReview || currentOrder;
+  const openFeedbackModal = useCallback(async (orderToReview) => {
+    const targetOrder = orderToReview;
     if (!targetOrder) return;
     
     setFeedbackSentiment('Happy');
@@ -222,7 +221,7 @@ export default function OrderTracking() {
     } catch (err) {
       // No prior feedback
     }
-  };
+  }, []);
 
   const handleSentimentChange = (sentimentKey) => {
     setFeedbackSentiment(sentimentKey);
@@ -366,7 +365,7 @@ export default function OrderTracking() {
     };
   };
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     try {
       setLoading(true);
       let rawOrders = [];
@@ -436,7 +435,7 @@ export default function OrderTracking() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [urlOrderId]);
 
   useEffect(() => {
     fetchOrders();
@@ -498,7 +497,7 @@ export default function OrderTracking() {
       socket.off('ORDER_STATUS_UPDATED', handleStatusUpdate);
       socket.off('DRIVER_LOCATION_UPDATED', handleDriverLocation);
     };
-  }, [token, urlOrderId]);
+  }, [token, urlOrderId, fetchOrders, openFeedbackModal]);
 
   const currentOrder = activeOrders[selectedOrderIndex] || activeOrders[0] || null;
   const currentLevel = currentOrder ? getStatusLevel(currentOrder.status) : 1;
@@ -532,7 +531,7 @@ export default function OrderTracking() {
           });
       }
     }
-  }, [currentOrder?.id, currentOrder?.status]);
+  }, [currentOrder, openFeedbackModal]);
 
   // Live Driver Real-Time Movement ONLY runs when status is out_for_delivery / in_transit / picked_up (level 5)
   useEffect(() => {

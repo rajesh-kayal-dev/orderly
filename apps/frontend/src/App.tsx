@@ -262,7 +262,7 @@ export const App: React.FC = () => {
         dispatch(setAuthInitialized({ status: 'unauthenticated' }));
       } else {
         // Network or transient server error, maintain stored state but mark initialized
-        dispatch(setAuthInitialized());
+        dispatch(setAuthInitialized({ status: 'authenticated' }));
       }
     }
   }, [dispatch]);

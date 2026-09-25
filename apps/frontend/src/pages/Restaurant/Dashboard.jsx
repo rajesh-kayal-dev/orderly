@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import axios from '../../api/axios';
@@ -52,13 +52,15 @@ export default function RestaurantDashboard() {
         }
       } catch (_) {}
     };
-    fetchProfile();
-  }, [user?.id]);
+    if (user?.id) {
+      fetchProfile();
+    }
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const restaurantName = profile?.name || (user?.full_name ? `${user.full_name}'s Restaurant` : 'My Restaurant');
   const ownerName = user?.full_name || profile?.owner_name || 'Partner';
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!profile?.id) {
       setLoading(false);
       return;
@@ -84,14 +86,16 @@ export default function RestaurantDashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [profile]);
 
   useEffect(() => {
     if (profile && profile.id) {
       fetchData();
 
       socket.connect();
-      socket.emit('join', user.id);
+      if (user?.id) {
+        socket.emit('join', user.id);
+      }
 
       const handleNewOrder = (data) => {
         notification.success({
@@ -117,7 +121,7 @@ export default function RestaurantDashboard() {
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [profile, user]);
+  }, [profile, user, fetchData]);
 
   const getFilteredOrders = (status) => {
     return orders.filter(o => {

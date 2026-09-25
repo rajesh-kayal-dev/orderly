@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from '../../api/axios';
-import { useSelector } from 'react-redux';
 import socket from '../../socket';
 import {
   SyncOutlined,
@@ -20,7 +19,6 @@ import {
 import { Modal, Tag } from 'antd';
 
 export default function AdminOrders() {
-  const { token } = useSelector(state => state.auth);
   const [orders, setOrders] = useState([]);
   const [restaurants, setRestaurants] = useState([]);
   const [selectedRestaurant, setSelectedRestaurant] = useState('');
@@ -58,7 +56,7 @@ export default function AdminOrders() {
     }
   };
 
-  const fetchOrders = async (silent = false) => {
+  const fetchOrders = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
       let url = `/admin/orders?status=${selectedStatus}&page=${currentPage}&limit=${pageSize}`;
@@ -93,7 +91,7 @@ export default function AdminOrders() {
     } finally {
       if (!silent) setLoading(false);
     }
-  };
+  }, [selectedStatus, currentPage, pageSize, selectedRestaurant, selectedMonth, selectedYear]);
 
   useEffect(() => {
     fetchRestaurants();
@@ -101,7 +99,7 @@ export default function AdminOrders() {
 
   useEffect(() => {
     fetchOrders();
-  }, [selectedRestaurant, selectedStatus, currentPage, pageSize, selectedMonth, selectedYear]);
+  }, [fetchOrders]);
 
   // Real-time live auto-update via WebSocket without page refresh
   useEffect(() => {
@@ -126,7 +124,7 @@ export default function AdminOrders() {
       socket.off('DRIVER_ASSIGNED', handleOrderEvent);
       socket.off('AVAILABLE_DELIVERY', handleOrderEvent);
     };
-  }, [selectedRestaurant, selectedStatus, currentPage, pageSize, selectedMonth, selectedYear]);
+  }, [fetchOrders]);
 
   useEffect(() => {
     setCurrentPage(1);

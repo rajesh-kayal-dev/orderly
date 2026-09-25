@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSelector } from 'react-redux';
 import axios from '../../api/axios';
 import { 
@@ -149,7 +149,7 @@ function AddCategoryInline({ onCreated }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function MenuManagement() {
-    const { profile, token } = useSelector(state => state.auth);
+    const { profile } = useSelector(state => state.auth);
     const [items, setItems] = useState([]);
     const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -163,7 +163,7 @@ export default function MenuManagement() {
     const [editingItem, setEditingItem] = useState(null);
     const [form] = Form.useForm();
 
-    const fetchCategories = async () => {
+    const fetchCategories = useCallback(async () => {
         if (!profile?.id) return;
         try {
             const response = await axios.get(`/menu/categories/${profile.id}`);
@@ -174,9 +174,9 @@ export default function MenuManagement() {
             console.error('Error fetching categories:', error);
             setCategories([]);
         }
-    };
+    }, [profile]);
 
-    const fetchMenu = async (currentPage = page, currentSearch = search, currentCategory = selectedCategory) => {
+    const fetchMenu = useCallback(async (currentPage = page, currentSearch = search, currentCategory = selectedCategory) => {
         if (!profile?.id) {
             setLoading(false);
             setItems([]);
@@ -207,14 +207,14 @@ export default function MenuManagement() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [profile, page, search, selectedCategory]);
 
     useEffect(() => {
         if (profile?.id) {
             fetchMenu();
             fetchCategories();
         }
-    }, [profile, page]);
+    }, [profile, fetchMenu, fetchCategories]);
 
     const handleSearch = (e) => {
         setSearch(e.target.value);

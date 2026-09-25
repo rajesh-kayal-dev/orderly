@@ -4,7 +4,6 @@ import { Formik, Form, Field, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
 import axios from '../../api/axios';
 import { loginSuccess } from '../../redux/slices/authSlice';
-import socket from '../../socket';
 import { notification } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import {

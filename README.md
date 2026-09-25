@@ -1,201 +1,550 @@
-# Monorepo Starter
+# Orderly
 
-A full-stack monorepo starter using **pnpm, Turborepo, Next.js, Node.js, and TypeScript**.
+Orderly is a real-time, multi-role food-delivery platform built as a
+TypeScript monorepo. It connects customers, restaurants, delivery
+partners, and administrators through a centralized API Gateway,
+domain-focused services, PostgreSQL/Prisma persistence, Kafka events,
+and realtime UI updates.
 
-## Stack
+> **Status:** Active development / pre-deployment hardening.
 
-- Next.js — frontend
-- Node.js + TypeScript — API
-- pnpm — package manager
-- Turborepo — monorepo task runner
-- Shared packages — reusable code
+## Features
 
-## Project Structure
+### Customer
 
-```text
-monorepo/
-├── apps/
-│   ├── web/          # Next.js frontend
-│   └── api/          # Node.js API
-│
-├── packages/
-│   └── utils/        # Shared utilities
-│
-├── .gitignore
-├── package.json
-├── pnpm-workspace.yaml
-└── turbo.json
-````
+-   Browse restaurants and menus
+-   Search restaurants and view menu items
+-   Add, update, and remove cart items
+-   Apply promotional coupons
+-   Manage delivery address and contact details
+-   Choose supported payment methods, including Cash on Delivery
+-   Place and track orders
+-   View order history
+-   Receive order-status notifications
+-   View assigned delivery partner during delivery
+-   Submit restaurant feedback after completed orders
 
-## 1. Clone
+### Restaurant
 
-```bash
-git clone git@github.com:rajesh-kayal-dev/orderly.git <project-name>
-cd <project-name>
+-   Register and authenticate
+-   Manage restaurant profile
+-   Manage menu categories and menu items
+-   Control menu-item availability
+-   Receive and process customer orders
+-   Accept orders
+-   Start preparing orders
+-   Mark orders ready for pickup
+-   Receive notifications and customer feedback
+
+### Delivery Partner
+
+-   Register as a delivery partner
+-   Wait for admin approval
+-   Manage online/availability status
+-   View available deliveries
+-   Accept deliveries
+-   Pick up orders
+-   Mark orders in transit
+-   Complete deliveries
+-   View delivery history and earnings
+
+### Admin
+
+-   Separate admin authentication
+-   Dashboard and operational overview
+-   Manage customers
+-   Manage restaurants
+-   Manage delivery partners
+-   Approve, suspend, or block accounts
+-   Monitor orders
+-   Receive operational notifications
+-   Open management sections directly from notifications
+-   Review customer feedback
+
+## Architecture
+
+``` text
+                         React + Vite
+                         localhost:3000
+                               |
+                               v
+                       +---------------+
+                       |  API Gateway  |
+                       |    :5001      |
+                       +-------+-------+
+                               |
+        +-----------+----------+----------+-----------+-----------+
+        |           |          |          |           |           |
+        v           v          v          v           v           v
+    Identity   Restaurant    Order     Payment    Delivery   Notification
+      :3001       :3003       :3004      :3005       :3006       :3007
+        |           |          |          |           |           |
+        +-----------+----------+----------+-----------+-----------+
+                               |
+                    +----------+----------+
+                    |                     |
+                    v                     v
+               PostgreSQL               Kafka
+               + Prisma              orderly.*
 ```
 
-If you are using this repository as a template, you can skip the clone command.
+## Repository Structure
 
-## 2. Install
+``` text
+orderly/
+├── apps/
+│   ├── frontend/          # React + Vite web application
+│   ├── gateway/           # API Gateway
+│   └── e2e/               # Playwright E2E tests
+│
+├── services/
+│   ├── identity/          # Authentication, users and roles
+│   ├── restaurant/        # Restaurants and menus
+│   ├── order/             # Cart, pricing and orders
+│   ├── payment/           # Payment providers and payment state
+│   ├── delivery/          # Delivery partners and deliveries
+│   └── notification/      # Notifications and event consumers
+│
+├── packages/
+│   ├── contracts/         # Shared API/domain contracts
+│   ├── events/            # Shared Kafka event contracts
+│   ├── config/            # Shared configuration
+│   ├── logger/            # Shared logging
+│   └── utils/             # Shared utilities
+│
+├── docs/
+│   ├── adr/
+│   ├── api/
+│   └── architecture/
+│
+├── infrastructure/
+│   └── docker/
+│
+├── scripts/
+├── AGENT.md
+├── package.json
+├── pnpm-workspace.yaml
+├── pnpm-lock.yaml
+└── turbo.json
+```
 
-Make sure you have **Node.js** and **pnpm** installed.
+Generated directories such as `node_modules`, `dist`, `.turbo`, and
+Playwright artifacts are not source code and should remain ignored.
 
-Then run:
+## Service Ports
 
-```bash
+  Component      Purpose                        Port
+  -------------- -------------------------- --------
+  Frontend       React/Vite application       `3000`
+  Gateway        API entry point              `5001`
+  Identity       Authentication and users     `3001`
+  Restaurant     Restaurant/menu domain       `3003`
+  Order          Cart/order domain            `3004`
+  Payment        Payment domain               `3005`
+  Delivery       Delivery domain              `3006`
+  Notification   Notification domain          `3007`
+  PostgreSQL     Local database               `5434`
+
+Ports are local-development defaults. The relevant `.env.example` and
+package configuration are the source of truth.
+
+## Technology Stack
+
+**Frontend** - React - TypeScript - Vite - Tailwind CSS - React Router -
+Centralized API client - Socket-based realtime updates where
+implemented - Leaflet/OpenStreetMap for tracking
+
+**Backend** - Node.js - TypeScript - Express - REST APIs - JWT
+authentication - Zod validation - Prisma ORM
+
+**Infrastructure** - PostgreSQL - Apache Kafka - Docker - Turborepo -
+pnpm
+
+**Testing** - Node/Vitest-style service tests where configured -
+Playwright - Playwright MCP for multi-role browser validation
+
+## Authentication
+
+Customer, Restaurant, and Delivery Partner accounts use the same normal
+authentication system:
+
+``` text
+Register
+  -> Identity Service
+  -> PostgreSQL
+  -> Password verification
+  -> JWT
+  -> Role resolution
+  -> Role-specific dashboard
+```
+
+Expected role routing:
+
+``` text
+CUSTOMER          -> /customer
+RESTAURANT        -> /restaurant
+DELIVERY_PARTNER  -> /delivery
+ADMIN             -> /admin
+```
+
+Admin authentication remains separate.
+
+Guest checkout/session handling is separate from registered-user JWT
+authentication.
+
+## Order Lifecycle
+
+``` text
+Customer
+  -> Restaurant/Menu
+  -> Cart
+  -> Coupon
+  -> Checkout
+  -> Payment or COD
+  -> Order Placed
+  -> Restaurant accepts
+  -> Preparing
+  -> Ready for pickup
+  -> Delivery partner accepts
+  -> Picked up
+  -> In transit
+  -> Delivered
+  -> Customer feedback
+```
+
+The intended UX is realtime: role dashboards and customer tracking
+should update when order state changes instead of requiring manual page
+refreshes.
+
+## Event-Driven Communication
+
+Kafka is used for asynchronous service communication. Shared event
+definitions live in:
+
+``` text
+packages/events/
+```
+
+Shared contracts live in:
+
+``` text
+packages/contracts/
+```
+
+The event namespace is:
+
+``` text
+orderly.*
+```
+
+Representative events include:
+
+``` text
+order.placed
+order.accepted
+order.preparing
+order.ready
+order.cancelled
+
+delivery.created
+delivery.assigned
+delivery.picked_up
+delivery.in_transit
+delivery.delivered
+```
+
+The current source code in `packages/events` and `packages/contracts` is
+authoritative for event names and payloads.
+
+## Data Ownership
+
+Each service owns its domain data and persistence logic:
+
+``` text
+Identity       -> identity/user data
+Restaurant     -> restaurant/menu data
+Order          -> cart/order data
+Payment        -> payment data
+Delivery       -> delivery/partner data
+Notification   -> notification data
+```
+
+Services communicate through APIs and events. A service should not
+directly modify another service's database tables.
+
+Prisma schemas and migrations remain inside their owning service.
+
+## Local Setup
+
+### Prerequisites
+
+Install:
+
+-   Node.js
+-   pnpm
+-   Docker Desktop
+-   PostgreSQL infrastructure
+-   Kafka for event-driven workflows
+
+Check versions:
+
+``` bash
+node --version
+pnpm --version
+docker --version
+```
+
+### Install dependencies
+
+From the repository root:
+
+``` bash
 pnpm install
 ```
 
-## 3. Rename the Project
+### Environment
 
-Change the project name in these files:
+Configure the required environment variables using the repository's
+`.env.example` files.
 
-```text
-package.json
-apps/web/package.json
-apps/api/package.json
-packages/utils/package.json
+Never commit:
+
+``` text
+.env
+.env.*
 ```
 
-Example:
+Real database passwords, JWT private keys, OAuth secrets, and payment
+credentials must stay outside Git.
 
-```json
-"name": "my-project"
+### PostgreSQL
+
+Start the repository's PostgreSQL infrastructure:
+
+``` bash
+docker compose -f infrastructure/postgres/docker-compose.yml up -d
 ```
 
-For scoped packages, update:
+Verify:
 
-```text
-@orderly/utils
-@orderly/gateway
+``` bash
+docker ps
 ```
 
-to your project name if needed.
+Kafka should be started using the repository's current infrastructure
+configuration.
 
-## 4. Environment Variables
+### Start the application
 
-Create environment files only where your project needs them.
+Use the root development command:
 
-```text
-apps/
-├── web/
-│   └── .env.local
-│
-└── api/
-    └── .env
-```
-
-Do not commit real `.env` files.
-
-## 5. Start Development
-
-From the **root folder**:
-
-```bash
+``` bash
 pnpm dev
 ```
 
-This starts:
+Individual services can be started with their workspace scripts, for
+example:
 
-```text
-Web → http://localhost:3000
-API → http://localhost:5000
+``` bash
+pnpm --filter @orderly/identity dev
+pnpm --filter @orderly/restaurant dev
+pnpm --filter @orderly/order dev
+pnpm --filter @orderly/payment dev
+pnpm --filter @orderly/delivery dev
+pnpm --filter @orderly/notification dev
 ```
 
-The shared `utils` package also runs in watch mode.
+Use the current `package.json` scripts as the final source of truth for
+available commands.
 
-## 6. Build
+## Database and Prisma
 
-Build everything:
+Each database-owning service maintains its own Prisma schema and
+migrations.
 
-```bash
+When changing a schema:
+
+1.  Inspect the service's `prisma/schema.prisma`.
+2.  Preserve existing migrations.
+3.  Create a new migration for intentional schema changes.
+4.  Regenerate the Prisma client when required.
+5.  Run the affected service tests.
+6.  Run the broader regression suite.
+
+Do not delete historical migrations as part of ordinary cleanup.
+
+## Testing
+
+Run the repository's quality checks before deployment:
+
+``` bash
+pnpm typecheck
+pnpm test
 pnpm build
 ```
 
-Turborepo will build the packages and apps in the correct order.
+Run browser E2E tests:
 
-## Useful Commands
-
-Start everything:
-
-```bash
-pnpm dev
+``` bash
+pnpm --filter @orderly/e2e test
 ```
 
-Build everything:
+The E2E suite uses isolated contexts for:
 
-```bash
-pnpm build
+``` text
+Customer
+Restaurant
+Delivery Partner
+Admin
 ```
 
-Run only the web app:
+Important scenarios include:
 
-```bash
-pnpm --filter web dev
+-   Authentication and RBAC
+-   Restaurant/menu browsing
+-   Cart and checkout
+-   Coupon/pricing
+-   Payment/COD
+-   Restaurant order lifecycle
+-   Delivery lifecycle
+-   Customer tracking
+-   Notifications
+-   Admin management
+-   Cross-role realtime updates
+-   Golden Order lifecycle
+
+## Pricing and Payments
+
+Orderly follows a canonical pricing model:
+
+``` text
+Subtotal
+- Discount
++ Delivery Fee
++ Platform Fee
++ Applicable Tax
+= Final Payable Amount
 ```
 
-Run only the API:
+The authoritative final amount must remain consistent across:
 
-```bash
-pnpm --filter @orderly/gateway dev
+``` text
+Checkout
+Payment
+Order database
+Confirmation
+Tracking
+My Orders
+Restaurant view
+Admin view
+Email
 ```
 
-Add a package to the web app:
+The frontend must not silently calculate a different final amount from
+the backend.
 
-```bash
-pnpm --filter web add <package>
+Payment-provider behavior depends on the configured sandbox/production
+credentials.
+
+## Notifications and Realtime Updates
+
+The notification system handles platform events such as:
+
+-   New order
+-   Order accepted
+-   Order preparing
+-   Order ready
+-   Delivery assigned
+-   Delivery picked up
+-   Order in transit
+-   Order delivered
+-   New restaurant registration
+-   New delivery partner registration
+-   Administrative events
+
+Where realtime support is implemented, dashboards and tracking should
+update automatically without manual refresh.
+
+## Security
+
+Security-sensitive areas include:
+
+-   JWT authentication
+-   Role-based access control
+-   Password hashing
+-   Account suspension/blocking
+-   API validation
+-   Service authorization
+-   Payment verification
+-   Secret management
+
+Never commit:
+
+``` text
+JWT private keys
+API secrets
+database passwords
+payment credentials
+OAuth client secrets
+production .env files
 ```
 
-Add a package to the API:
+## Development Principles
 
-```bash
-pnpm --filter @orderly/gateway add <package>
+1.  Keep business domains separated.
+2.  Preserve service ownership boundaries.
+3.  Communicate across services through APIs/events.
+4.  Keep shared contracts in shared packages.
+5.  Prefer strict TypeScript and type-safe boundaries.
+6.  Keep one authoritative source for business calculations.
+7.  Use real persisted data for real features instead of static mocks.
+8.  Keep technical infrastructure invisible to end users.
+9.  Test before deployment.
+10. Keep modules focused and avoid unnecessary abstraction.
+11. Never commit secrets.
+12. Preserve database migration history.
+
+## Documentation
+
+Additional documentation lives under:
+
+``` text
+docs/
+├── adr/
+├── api/
+└── architecture/
 ```
 
-Add a development package:
+Read `AGENT.md` before making substantial repository changes.
 
-```bash
-pnpm --filter web add -D <package>
-```
+## Deployment Checklist
 
-## Where to Write Code
+Before deployment:
 
-### Frontend
+-   [ ] Environment variables configured
+-   [ ] No secrets committed
+-   [ ] Database migrations verified
+-   [ ] PostgreSQL available
+-   [ ] Kafka available
+-   [ ] Payment provider configured
+-   [ ] JWT configuration verified
+-   [ ] OAuth/Google configuration verified if enabled
+-   [ ] `pnpm install --frozen-lockfile` succeeds
+-   [ ] Typecheck passes
+-   [ ] Tests pass
+-   [ ] Production build passes
+-   [ ] Playwright E2E passes
+-   [ ] Golden Order passes
+-   [ ] Authentication and RBAC verified
+-   [ ] Payment and COD flows verified
+-   [ ] Realtime updates verified
+-   [ ] Email delivery verified
+-   [ ] Admin management verified
+-   [ ] Pricing consistency verified
+-   [ ] Manual UI inspection completed
+-   [ ] Final Git diff reviewed
 
-```text
-apps/web/
-```
+## License
 
-Use this for your Next.js application.
-
-### Backend
-
-```text
-apps/api/
-```
-
-Use this for your Node.js API.
-
-### Shared Code
-
-```text
-packages/utils/
-```
-
-Use this for code that needs to be shared between apps.
-
-## Start a New Project
-
-After cloning this starter:
-
-```text
-1. Clone the repository
-2. Rename package names
-3. Remove the old project code
-4. Add your environment variables
-5. Run pnpm install
-6. Run pnpm dev
-7. Start building
-```
-
-That's it.
+Orderly is currently maintained as a private project. Add the
+appropriate license before public distribution.

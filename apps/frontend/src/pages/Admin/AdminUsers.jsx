@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from '../../api/axios';
 import socket from '../../socket';
-import { useSelector } from 'react-redux';
 import { notification, Modal, Tag, Input, Select, Button, Tooltip, Empty, Spin } from 'antd';
 import {
   UserOutlined,
@@ -22,7 +21,6 @@ const { Option } = Select;
 const { TextArea } = Input;
 
 export default function AdminUsers() {
-  const { token, user: currentAdmin } = useSelector((state) => state.auth);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -70,7 +68,7 @@ export default function AdminUsers() {
       socket.off('USER_STATUS_UPDATED', handleUserEvent);
       socket.off('USER_UPDATED', handleUserEvent);
     };
-  }, [token]);
+  }, []);
 
   const handleStatusChange = (user, nextStatus, title) => {
     if (user.role === 'admin') {

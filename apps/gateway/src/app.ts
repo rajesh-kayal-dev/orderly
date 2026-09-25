@@ -4224,20 +4224,35 @@ export function createGatewayApp(): express.Express {
 
   app.get(["/orders", "/orders/me"], authenticate, (req, res) => {
     const user = (req as any).user;
-    const userId = user.id;
-    let customerOrders = user.isGuest
-      ? orders.filter(
-          (o) =>
-            (o.guest_session_id === userId || o.guest_session_id === user.guestSessionId) &&
-            o.status !== "payment_pending" &&
-            o.payment_status !== "failed"
-        )
-      : orders.filter(
-          (o) =>
-            o.customer_id === userId &&
-            o.status !== "payment_pending" &&
-            o.payment_status !== "failed"
+    const userId = String(user?.id || "");
+    const cleanUserId = userId.replace(/^usr-/, "");
+    const userEmail = (user?.email || "").toLowerCase().trim();
+
+    let customerOrders = orders.filter((o) => {
+      // Exclude abandoned payment_pending or failed transactions
+      if (o.status === "payment_pending" || o.payment_status === "failed") {
+        return false;
+      }
+
+      if (user?.isGuest) {
+        return (
+          (o.guest_session_id && (o.guest_session_id === userId || o.guest_session_id === user.guestSessionId)) ||
+          o.customer_id === userId
         );
+      }
+
+      // Logged-in customer matching (supports user ID, usr- prefixed ID, clean ID, and contact info email)
+      const oCustId = String(o.customer_id || "");
+      const oCustClean = oCustId.replace(/^usr-/, "");
+      const oEmail = (o.contact_info?.email || "").toLowerCase().trim();
+
+      return (
+        oCustId === userId ||
+        oCustId === `usr-${userId}` ||
+        (cleanUserId && oCustClean === cleanUserId) ||
+        (userEmail && oEmail && oEmail === userEmail)
+      );
+    });
 
     // Sort newest first
     customerOrders.sort(
