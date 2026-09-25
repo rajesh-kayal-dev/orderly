@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "Security & Vulnerability Reporting"
+    url: "https://github.com/rajesh-kayal-dev/orderly/blob/main/SECURITY.md"
+    about: "Report sensitive security vulnerabilities directly according to our security policy."
+  - name: "Contributor Guidelines"
+    url: "https://github.com/rajesh-kayal-dev/orderly/blob/main/CONTRIBUTING.md"
+    about: "Read our engineering workflow, coding standards, and branch policies."

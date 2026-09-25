@@ -1,550 +1,296 @@
 # Orderly
 
-Orderly is a real-time, multi-role food-delivery platform built as a
-TypeScript monorepo. It connects customers, restaurants, delivery
-partners, and administrators through a centralized API Gateway,
-domain-focused services, PostgreSQL/Prisma persistence, Kafka events,
-and realtime UI updates.
+<p align="center">
+  <img src="apps/frontend/public/orderly-logo.png" alt="Orderly logo" width="96">
+</p>
 
-> **Status:** Active development / pre-deployment hardening.
+Real-time food delivery platform built with React, TypeScript, domain-focused services, Kafka, PostgreSQL, and realtime updates.
 
-## Features
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9%20%2F%207.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![Node.js](https://img.shields.io/badge/Node.js-22.x%20CI-5FA04E?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![pnpm](https://img.shields.io/badge/pnpm-10.33-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
+[![Turborepo](https://img.shields.io/badge/Turborepo-2.10-EF4444?logo=turborepo&logoColor=white)](https://turborepo.com/)
+[![CI](https://github.com/rajesh-kayal-dev/orderly/actions/workflows/ci.yml/badge.svg)](https://github.com/rajesh-kayal-dev/orderly/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Proprietary-5A5A5A)](LICENSE)
 
-### Customer
+**Explore:** [Overview](#what-is-orderly) ·
+[Product Roles](#product-roles) ·
+[Order Journey](#order-journey) ·
+[Architecture](#architecture) ·
+[Local Development](#local-development) ·
+[Testing](#testing) ·
+[Documentation](#documentation)
 
--   Browse restaurants and menus
--   Search restaurants and view menu items
--   Add, update, and remove cart items
--   Apply promotional coupons
--   Manage delivery address and contact details
--   Choose supported payment methods, including Cash on Delivery
--   Place and track orders
--   View order history
--   Receive order-status notifications
--   View assigned delivery partner during delivery
--   Submit restaurant feedback after completed orders
+## What is Orderly?
 
-### Restaurant
+Orderly is a food-delivery platform for customers, restaurants, delivery partners, and administrators. It supports restaurant discovery, menu browsing, cart and checkout, payment or cash on delivery, order tracking, delivery management, and feedback.
 
--   Register and authenticate
--   Manage restaurant profile
--   Manage menu categories and menu items
--   Control menu-item availability
--   Receive and process customer orders
--   Accept orders
--   Start preparing orders
--   Mark orders ready for pickup
--   Receive notifications and customer feedback
+The codebase is a multi-service application organized around explicit domain ownership. Synchronous APIs, an event-driven architecture, and realtime order and delivery updates are being integrated incrementally as the platform converges toward its target service boundaries.
 
-### Delivery Partner
+## Product Roles
 
--   Register as a delivery partner
--   Wait for admin approval
--   Manage online/availability status
--   View available deliveries
--   Accept deliveries
--   Pick up orders
--   Mark orders in transit
--   Complete deliveries
--   View delivery history and earnings
+| Role | Main capabilities |
+| --- | --- |
+| Customer | Discover restaurants and menus, manage a cart, check out, pay or use COD, track orders, view history, and submit feedback. |
+| Restaurant | Manage a profile and menus, receive and process orders, update preparation state, and view feedback. |
+| Delivery Partner | Maintain approval and availability, accept deliveries, update pickup and transit state, complete deliveries, and view delivery history. |
+| Admin | Manage customers, restaurants, delivery partners, orders, feedback, and operational notifications. |
 
-### Admin
+## Order Journey
 
--   Separate admin authentication
--   Dashboard and operational overview
--   Manage customers
--   Manage restaurants
--   Manage delivery partners
--   Approve, suspend, or block accounts
--   Monitor orders
--   Receive operational notifications
--   Open management sections directly from notifications
--   Review customer feedback
+```mermaid
+flowchart LR
+    A["Customer"] --> B["Restaurant & Menu"]
+    B --> C["Cart"]
+    C --> D["Checkout"]
+    D --> E["Payment / COD"]
+    E --> F["Order Placed"]
+    F --> G["Restaurant Accepts"]
+    G --> H["Preparing"]
+    H --> I["Ready"]
+    I --> J["Delivery Assigned"]
+    J --> K["Picked Up"]
+    K --> L["In Transit"]
+    L --> M["Delivered"]
+    M --> N["Feedback"]
+```
 
 ## Architecture
 
-``` text
-                         React + Vite
-                         localhost:3000
-                               |
-                               v
-                       +---------------+
-                       |  API Gateway  |
-                       |    :5001      |
-                       +-------+-------+
-                               |
-        +-----------+----------+----------+-----------+-----------+
-        |           |          |          |           |           |
-        v           v          v          v           v           v
-    Identity   Restaurant    Order     Payment    Delivery   Notification
-      :3001       :3003       :3004      :3005       :3006       :3007
-        |           |          |          |           |           |
-        +-----------+----------+----------+-----------+-----------+
-                               |
-                    +----------+----------+
-                    |                     |
-                    v                     v
-               PostgreSQL               Kafka
-               + Prisma              orderly.*
+The target topology routes frontend traffic through the API Gateway to domain-owned services. The current implementation is still converging toward those boundaries.
+
+```mermaid
+flowchart TB
+    Frontend["React + Vite"]
+    Gateway["API Gateway"]
+
+    subgraph Services["Domain services"]
+        Identity["Identity Service"]
+        Restaurant["Restaurant Service"]
+        Order["Order Service"]
+        Payment["Payment Service"]
+        Delivery["Delivery Service"]
+        Notification["Notification Service"]
+    end
+
+    Kafka[("Kafka")]
+    Data[("PostgreSQL<br/>one logical database per service")]
+
+    Frontend --> Gateway
+
+    Gateway -. target routes .-> Identity
+    Gateway -. target routes .-> Restaurant
+    Gateway -. target routes .-> Order
+    Gateway -. target routes .-> Payment
+    Gateway -. target routes .-> Delivery
+    Gateway -. target routes .-> Notification
+
+    Order -. publishes events .-> Kafka
+    Payment -. publishes events .-> Kafka
+    Delivery -. publishes events .-> Kafka
+    Kafka -. events .-> Notification
+
+    Identity -. owns .-> Data
+    Restaurant -. owns .-> Data
+    Order -. owns .-> Data
+    Payment -. owns .-> Data
+    Delivery -. owns .-> Data
+    Notification -. owns .-> Data
 ```
+
+Each domain service owns its persistence and business logic. Services communicate through APIs and events rather than directly querying another service's database. The PostgreSQL node represents one physical cluster with a separate logical database per service, not unrestricted shared access.
+
+Kafka is currently wired for Order, Payment, and Delivery producers and for the Notification consumer. The Gateway also retains transitional business logic and direct persistence; dashed Gateway routes show the intended service boundaries.
+
+### Architecture explanation
+
+| Layer | Responsibility |
+| --- | --- |
+| Frontend | Customer, restaurant, delivery-partner, and admin interfaces |
+| Gateway | Target public API boundary, authentication enforcement, and request routing |
+| Domain services | Business ownership by domain |
+| Kafka | Event contracts and current producer/consumer communication |
+| PostgreSQL | One physical cluster with service-owned logical databases |
+| Shared packages | API/event contracts, Kafka utilities, and neutral shared utilities |
+
+See [ARCHITECTURE.md](ARCHITECTURE.md), [API.md](API.md), [DATABASE.md](DATABASE.md), and [EVENTS.md](EVENTS.md) for detailed design notes.
+
+## Engineering Highlights
+
+| Area | Highlights |
+| --- | --- |
+| Architecture | TypeScript monorepo, pnpm workspaces, Turborepo, API Gateway, and domain-focused services |
+| Communication | REST APIs, Kafka event contracts, Socket.IO updates, and incremental event integration |
+| Data | PostgreSQL, Prisma, and service-owned persistence boundaries |
+| Security | JWT authentication, role-based access, password hashing, and account-status enforcement |
+| Payments | Payment-provider integration, cash on delivery, and server-authoritative pricing |
+| Testing | Node service tests, frontend lint/typecheck, builds, and Playwright E2E |
+
+## Development Roadmap
+
+```mermaid
+flowchart TB
+    A["Foundation"] --> B["Identity & Authentication"]
+    B --> C["Restaurant & Menu"]
+    C --> D["Cart & Ordering"]
+    D --> E["Pricing & Payments"]
+    E --> F["Delivery"]
+    F --> G["Events & Notifications"]
+    G --> H["Realtime Tracking"]
+    H --> I["Admin Operations"]
+    I --> J["E2E & Production Hardening"]
+```
+
+Orderly is being developed incrementally by domain, with each stage building on the previous platform capabilities. The roadmap shows the intended sequence, not completion percentages or status.
 
 ## Repository Structure
 
-``` text
+```text
 orderly/
+├── .github/
 ├── apps/
-│   ├── frontend/          # React + Vite web application
-│   ├── gateway/           # API Gateway
-│   └── e2e/               # Playwright E2E tests
-│
+│   ├── frontend/
+│   ├── gateway/
+│   └── e2e/
 ├── services/
-│   ├── identity/          # Authentication, users and roles
-│   ├── restaurant/        # Restaurants and menus
-│   ├── order/             # Cart, pricing and orders
-│   ├── payment/           # Payment providers and payment state
-│   ├── delivery/          # Delivery partners and deliveries
-│   └── notification/      # Notifications and event consumers
-│
+│   ├── identity/
+│   ├── restaurant/
+│   ├── order/
+│   ├── payment/
+│   ├── delivery/
+│   └── notification/
 ├── packages/
-│   ├── contracts/         # Shared API/domain contracts
-│   ├── events/            # Shared Kafka event contracts
-│   ├── config/            # Shared configuration
-│   ├── logger/            # Shared logging
-│   └── utils/             # Shared utilities
-│
+│   ├── contracts/
+│   ├── events/
+│   └── utils/
+├── infra/
+├── infrastructure/
+│   └── postgres/
 ├── docs/
 │   ├── adr/
-│   ├── api/
-│   └── architecture/
-│
-├── infrastructure/
-│   └── docker/
-│
-├── scripts/
-├── AGENT.md
-├── package.json
-├── pnpm-workspace.yaml
-├── pnpm-lock.yaml
-└── turbo.json
+│   └── runbooks/
+└── scripts/
 ```
 
-Generated directories such as `node_modules`, `dist`, `.turbo`, and
-Playwright artifacts are not source code and should remain ignored.
-
-## Service Ports
-
-  Component      Purpose                        Port
-  -------------- -------------------------- --------
-  Frontend       React/Vite application       `3000`
-  Gateway        API entry point              `5001`
-  Identity       Authentication and users     `3001`
-  Restaurant     Restaurant/menu domain       `3003`
-  Order          Cart/order domain            `3004`
-  Payment        Payment domain               `3005`
-  Delivery       Delivery domain              `3006`
-  Notification   Notification domain          `3007`
-  PostgreSQL     Local database               `5434`
-
-Ports are local-development defaults. The relevant `.env.example` and
-package configuration are the source of truth.
+Generated directories such as `node_modules`, `dist`, `.turbo`, generated Prisma clients, and Playwright artifacts are intentionally omitted.
 
 ## Technology Stack
 
-**Frontend** - React - TypeScript - Vite - Tailwind CSS - React Router -
-Centralized API client - Socket-based realtime updates where
-implemented - Leaflet/OpenStreetMap for tracking
+| Area | Technologies |
+| --- | --- |
+| Frontend | React, TypeScript, Vite, Tailwind CSS, React Router |
+| Backend | Node.js, TypeScript, Express |
+| APIs | REST and a centralized API Gateway |
+| Data | PostgreSQL and Prisma |
+| Messaging | Apache Kafka |
+| Realtime | Socket.IO |
+| Infrastructure | Docker Compose, Turborepo, and pnpm workspaces |
+| Testing | Node test runner, ESLint, and Playwright |
 
-**Backend** - Node.js - TypeScript - Express - REST APIs - JWT
-authentication - Zod validation - Prisma ORM
+## Local Development
 
-**Infrastructure** - PostgreSQL - Apache Kafka - Docker - Turborepo -
-pnpm
-
-**Testing** - Node/Vitest-style service tests where configured -
-Playwright - Playwright MCP for multi-role browser validation
-
-## Authentication
-
-Customer, Restaurant, and Delivery Partner accounts use the same normal
-authentication system:
-
-``` text
-Register
-  -> Identity Service
-  -> PostgreSQL
-  -> Password verification
-  -> JWT
-  -> Role resolution
-  -> Role-specific dashboard
-```
-
-Expected role routing:
-
-``` text
-CUSTOMER          -> /customer
-RESTAURANT        -> /restaurant
-DELIVERY_PARTNER  -> /delivery
-ADMIN             -> /admin
-```
-
-Admin authentication remains separate.
-
-Guest checkout/session handling is separate from registered-user JWT
-authentication.
-
-## Order Lifecycle
-
-``` text
-Customer
-  -> Restaurant/Menu
-  -> Cart
-  -> Coupon
-  -> Checkout
-  -> Payment or COD
-  -> Order Placed
-  -> Restaurant accepts
-  -> Preparing
-  -> Ready for pickup
-  -> Delivery partner accepts
-  -> Picked up
-  -> In transit
-  -> Delivered
-  -> Customer feedback
-```
-
-The intended UX is realtime: role dashboards and customer tracking
-should update when order state changes instead of requiring manual page
-refreshes.
-
-## Event-Driven Communication
-
-Kafka is used for asynchronous service communication. Shared event
-definitions live in:
-
-``` text
-packages/events/
-```
-
-Shared contracts live in:
-
-``` text
-packages/contracts/
-```
-
-The event namespace is:
-
-``` text
-orderly.*
-```
-
-Representative events include:
-
-``` text
-order.placed
-order.accepted
-order.preparing
-order.ready
-order.cancelled
-
-delivery.created
-delivery.assigned
-delivery.picked_up
-delivery.in_transit
-delivery.delivered
-```
-
-The current source code in `packages/events` and `packages/contracts` is
-authoritative for event names and payloads.
-
-## Data Ownership
-
-Each service owns its domain data and persistence logic:
-
-``` text
-Identity       -> identity/user data
-Restaurant     -> restaurant/menu data
-Order          -> cart/order data
-Payment        -> payment data
-Delivery       -> delivery/partner data
-Notification   -> notification data
-```
-
-Services communicate through APIs and events. A service should not
-directly modify another service's database tables.
-
-Prisma schemas and migrations remain inside their owning service.
-
-## Local Setup
+> **Local setup note:** The checked-in infrastructure and migration files are still being reconciled. The sequence below uses the service-owned PostgreSQL configuration and starts Kafka separately.
 
 ### Prerequisites
 
-Install:
+- Git
+- Node.js 22.x, matching CI
+- pnpm 10.33.0
+- Docker with Docker Compose
 
--   Node.js
--   pnpm
--   Docker Desktop
--   PostgreSQL infrastructure
--   Kafka for event-driven workflows
+### Install
 
-Check versions:
-
-``` bash
-node --version
-pnpm --version
-docker --version
+```bash
+git clone https://github.com/rajesh-kayal-dev/orderly.git
+cd orderly
+pnpm install --frozen-lockfile
 ```
 
-### Install dependencies
+### Configure environment
 
-From the repository root:
+Create local `.env` files from `.env.example`, `apps/frontend/.env.example`, and the relevant `services/*/.env.example` files. A root `.env` does not replace service-specific environment files.
 
-``` bash
-pnpm install
-```
+For services that publish or consume Kafka events, configure `KAFKA_BROKERS=localhost:9092`. Keep all real credentials local and never commit `.env` files.
 
-### Environment
+### Start infrastructure
 
-Configure the required environment variables using the repository's
-`.env.example` files.
+Start the service-owned PostgreSQL configuration and the Kafka service from the combined infrastructure file:
 
-Never commit:
-
-``` text
-.env
-.env.*
-```
-
-Real database passwords, JWT private keys, OAuth secrets, and payment
-credentials must stay outside Git.
-
-### PostgreSQL
-
-Start the repository's PostgreSQL infrastructure:
-
-``` bash
+```bash
 docker compose -f infrastructure/postgres/docker-compose.yml up -d
+docker compose -f infra/docker-compose.yml up -d kafka
 ```
 
-Verify:
+The PostgreSQL Compose file creates only the `orderly` database. The repository does not currently automate creation of the remaining logical databases:
 
-``` bash
-docker ps
+```bash
+docker exec -it orderly-postgres createdb -U orderly orderly_restaurant
+docker exec -it orderly-postgres createdb -U orderly orderly_order
+docker exec -it orderly-postgres createdb -U orderly orderly_payment
+docker exec -it orderly-postgres createdb -U orderly orderly_delivery
+docker exec -it orderly-postgres createdb -U orderly orderly_notification
 ```
 
-Kafka should be started using the repository's current infrastructure
-configuration.
+### Generate clients and build
 
-### Start the application
+Prisma clients are generated by the service build scripts:
 
-Use the root development command:
+```bash
+pnpm build
+```
 
-``` bash
+The repository has no complete root migration workflow, and the current migration history is incomplete for some services. Review [DATABASE.md](DATABASE.md) and resolve service migrations before relying on an existing database.
+
+### Start Orderly
+
+```bash
 pnpm dev
 ```
 
-Individual services can be started with their workspace scripts, for
-example:
-
-``` bash
-pnpm --filter @orderly/identity dev
-pnpm --filter @orderly/restaurant dev
-pnpm --filter @orderly/order dev
-pnpm --filter @orderly/payment dev
-pnpm --filter @orderly/delivery dev
-pnpm --filter @orderly/notification dev
-```
-
-Use the current `package.json` scripts as the final source of truth for
-available commands.
-
-## Database and Prisma
-
-Each database-owning service maintains its own Prisma schema and
-migrations.
-
-When changing a schema:
-
-1.  Inspect the service's `prisma/schema.prisma`.
-2.  Preserve existing migrations.
-3.  Create a new migration for intentional schema changes.
-4.  Regenerate the Prisma client when required.
-5.  Run the affected service tests.
-6.  Run the broader regression suite.
-
-Do not delete historical migrations as part of ordinary cleanup.
-
 ## Testing
 
-Run the repository's quality checks before deployment:
+Run the verified repository checks from the repository root:
 
-``` bash
+```bash
+pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
 ```
 
-Run browser E2E tests:
+`pnpm lint` and `pnpm typecheck` currently run frontend workspace tasks; `pnpm build` compiles all TypeScript workspaces. The root `pnpm test` task includes service, shared-package, and E2E workspaces.
 
-``` bash
+With Orderly running, required test data available, and Chromium installed, run the browser suite directly with:
+
+```bash
 pnpm --filter @orderly/e2e test
 ```
 
-The E2E suite uses isolated contexts for:
-
-``` text
-Customer
-Restaurant
-Delivery Partner
-Admin
-```
-
-Important scenarios include:
-
--   Authentication and RBAC
--   Restaurant/menu browsing
--   Cart and checkout
--   Coupon/pricing
--   Payment/COD
--   Restaurant order lifecycle
--   Delivery lifecycle
--   Customer tracking
--   Notifications
--   Admin management
--   Cross-role realtime updates
--   Golden Order lifecycle
-
-## Pricing and Payments
-
-Orderly follows a canonical pricing model:
-
-``` text
-Subtotal
-- Discount
-+ Delivery Fee
-+ Platform Fee
-+ Applicable Tax
-= Final Payable Amount
-```
-
-The authoritative final amount must remain consistent across:
-
-``` text
-Checkout
-Payment
-Order database
-Confirmation
-Tracking
-My Orders
-Restaurant view
-Admin view
-Email
-```
-
-The frontend must not silently calculate a different final amount from
-the backend.
-
-Payment-provider behavior depends on the configured sandbox/production
-credentials.
-
-## Notifications and Realtime Updates
-
-The notification system handles platform events such as:
-
--   New order
--   Order accepted
--   Order preparing
--   Order ready
--   Delivery assigned
--   Delivery picked up
--   Order in transit
--   Order delivered
--   New restaurant registration
--   New delivery partner registration
--   Administrative events
-
-Where realtime support is implemented, dashboards and tracking should
-update automatically without manual refresh.
-
-## Security
-
-Security-sensitive areas include:
-
--   JWT authentication
--   Role-based access control
--   Password hashing
--   Account suspension/blocking
--   API validation
--   Service authorization
--   Payment verification
--   Secret management
-
-Never commit:
-
-``` text
-JWT private keys
-API secrets
-database passwords
-payment credentials
-OAuth client secrets
-production .env files
-```
-
-## Development Principles
-
-1.  Keep business domains separated.
-2.  Preserve service ownership boundaries.
-3.  Communicate across services through APIs/events.
-4.  Keep shared contracts in shared packages.
-5.  Prefer strict TypeScript and type-safe boundaries.
-6.  Keep one authoritative source for business calculations.
-7.  Use real persisted data for real features instead of static mocks.
-8.  Keep technical infrastructure invisible to end users.
-9.  Test before deployment.
-10. Keep modules focused and avoid unnecessary abstraction.
-11. Never commit secrets.
-12. Preserve database migration history.
+Golden Order flow: Customer → Restaurant → Payment/COD → Delivery → Delivered → Feedback.
 
 ## Documentation
 
-Additional documentation lives under:
+| Document | Purpose |
+| --- | --- |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System structure, service boundaries, and communication patterns |
+| [API.md](API.md) | API communication and Gateway responsibilities |
+| [DATABASE.md](DATABASE.md) | Data ownership and Prisma guidance |
+| [EVENTS.md](EVENTS.md) | Kafka topics and asynchronous communication |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Deployment and operational guidance |
+| [SECURITY.md](SECURITY.md) | Security practices and vulnerability reporting |
+| [COLLABORATION.md](COLLABORATION.md), [CONTRIBUTING.md](CONTRIBUTING.md) | Collaboration and contribution workflow |
+| [CHANGELOG.md](CHANGELOG.md) | Project change history |
+| [LICENSE](LICENSE) | Project license |
 
-``` text
-docs/
-├── adr/
-├── api/
-└── architecture/
-```
+Architecture decisions: [docs/adr/](docs/adr/). Operational procedures: [docs/runbooks/](docs/runbooks/).
 
-Read `AGENT.md` before making substantial repository changes.
+## Project Status
 
-## Deployment Checklist
-
-Before deployment:
-
--   [ ] Environment variables configured
--   [ ] No secrets committed
--   [ ] Database migrations verified
--   [ ] PostgreSQL available
--   [ ] Kafka available
--   [ ] Payment provider configured
--   [ ] JWT configuration verified
--   [ ] OAuth/Google configuration verified if enabled
--   [ ] `pnpm install --frozen-lockfile` succeeds
--   [ ] Typecheck passes
--   [ ] Tests pass
--   [ ] Production build passes
--   [ ] Playwright E2E passes
--   [ ] Golden Order passes
--   [ ] Authentication and RBAC verified
--   [ ] Payment and COD flows verified
--   [ ] Realtime updates verified
--   [ ] Email delivery verified
--   [ ] Admin management verified
--   [ ] Pricing consistency verified
--   [ ] Manual UI inspection completed
--   [ ] Final Git diff reviewed
+**Active development / pre-deployment hardening.** The implementation is still being reconciled with the target service boundaries, infrastructure topology, and deployment model.
 
 ## License
 
-Orderly is currently maintained as a private project. Add the
-appropriate license before public distribution.
+Orderly is distributed under the project's proprietary license.
+
+See [LICENSE](LICENSE) for details.

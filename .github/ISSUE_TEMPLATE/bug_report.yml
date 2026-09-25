@@ -1,0 +1,89 @@
+name: "Bug Report"
+description: "File a reproducible bug report or regression issue for Orderly"
+title: "[BUG]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue with the Orderly platform. Please provide clear details to help reproduce and resolve the problem quickly.
+
+  - type: textarea
+    id: problem-description
+    attributes:
+      label: Problem Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Describe what happened...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: affected-area
+    attributes:
+      label: Affected Area
+      description: Select the platform component where the issue occurs.
+      options:
+        - "Frontend (Customer / Restaurant / Delivery / Admin UI)"
+        - "API Gateway (apps/gateway)"
+        - "Identity Service (services/identity)"
+        - "Restaurant Service (services/restaurant)"
+        - "Order Service (services/order)"
+        - "Payment Service (services/payment)"
+        - "Delivery Service (services/delivery)"
+        - "Notification Service (services/notification)"
+        - "Shared Contracts / Events (packages/*)"
+        - "Infrastructure / Docker / Kafka / DB"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction-steps
+    attributes:
+      label: Steps to Reproduce
+      description: Step-by-step instructions to reproduce the issue.
+      placeholder: |
+        1. Log in as 'Customer'
+        2. Add item to cart and proceed to checkout
+        3. Observe error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: Describe the expected correct behavior...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual Behavior
+      description: What actually occurred?
+      placeholder: Include error messages, unexpected responses, or HTTP status codes...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment & Context
+      description: Operating system, browser, Node.js version, or container setup.
+      placeholder: |
+        - OS: Windows 11 / macOS / Ubuntu
+        - Browser: Chrome 124 / Firefox 125
+        - Node: v22.x
+        - pnpm: 10.33.0
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Logs & Screenshots
+      description: Paste relevant logs, terminal output, or stack traces here.
+      placeholder: Paste console output or stack trace...
+    validations:
+      required: false
