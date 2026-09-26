@@ -9,9 +9,20 @@
 # (dockerContext: .) because each Dockerfile copies workspace-level files
 # (pnpm-workspace.yaml, pnpm-lock.yaml, packages/, turbo.json, ...).
 #
-# Services communicate over Render's private network using the service name
-# as hostname and the PORT Render provides (10000 by default), hence
-# RESTAURANT_SERVICE_URL / ORDER_SERVICE_URL point at :10000.
+# ALL services run on the `free` compute plan (0.1 CPU / 512 MB), so this
+# Blueprint applies without a payment method on the Render account.
+#
+# Inter-service calls therefore CANNOT use Render's private network: free web
+# services are not attached to it. RESTAURANT_SERVICE_URL and ORDER_SERVICE_URL
+# are wired to the target service's public HTTPS URL via the documented
+# `fromService` / `RENDER_EXTERNAL_URL` mechanism, which Render resolves from
+# the service's own onrender.com hostname. The `host`, `port` and `hostport`
+# fromService properties are deliberately NOT used — those return private
+# network values and would be unreachable from a free web service.
+#
+# Outbound SMTP: Render free web services cannot originate connections on
+# ports 25, 465 or 587. The mail variables are left unset (sync: false) so the
+# Blueprint does not assert a working SMTP transport on the free tier.
 #
 # Secrets use `sync: false` with no value: they are entered manually in the
 # Render dashboard (or prompted at Blueprint apply time) and never stored here.
@@ -21,6 +32,7 @@ services:
   - type: web
     name: orderly-gateway
     runtime: docker
+    plan: free
     dockerContext: .
     dockerfilePath: apps/gateway/Dockerfile
     healthCheckPath: /health
@@ -50,11 +62,11 @@ services:
       - key: VNPAY_RETURN_URL
         sync: false # defaults to localhost if unset
       - key: MAIL_HOST
-        value: smtp.gmail.com
+        sync: false # leave unset on free tier: outbound SMTP blocked
       - key: MAIL_PORT
-        value: "587"
+        sync: false # leave unset on free tier: outbound SMTP blocked
       - key: MAIL_SECURE
-        value: "false"
+        sync: false # leave unset on free tier: outbound SMTP blocked
       - key: MAIL_USER
         sync: false
       - key: MAIL_PASS
@@ -72,10 +84,11 @@ services:
       - key: DISPATCH_MAX_RADIUS_KM
         value: "15"
 
-  # ---------------- Internal services (private network) ----------------
+  # ---------------- Supporting services (public HTTPS) ----------------
   - type: web
     name: orderly-identity
     runtime: docker
+    plan: free
     dockerContext: .
     dockerfilePath: services/identity/Dockerfile
     healthCheckPath: /health
@@ -92,6 +105,7 @@ services:
   - type: web
     name: orderly-restaurant
     runtime: docker
+    plan: free
     dockerContext: .
     dockerfilePath: services/restaurant/Dockerfile
     healthCheckPath: /health
@@ -104,6 +118,7 @@ services:
   - type: web
     name: orderly-order
     runtime: docker
+    plan: free
     dockerContext: .
     dockerfilePath: services/order/Dockerfile
     healthCheckPath: /health
@@ -119,11 +134,18 @@ services:
       - key: KAFKA_LOG_LEVEL
         value: info
       - key: RESTAURANT_SERVICE_URL
-        value: http://orderly-restaurant:10000 # Render private network
+        # Public HTTPS base URL of orderly-restaurant (e.g.
+        # https://orderly-restaurant.onrender.com), resolved by Render from the
+        # target service's onrender.com hostname on every Blueprint sync.
+        fromService:
+          name: orderly-restaurant
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
 
   - type: web
     name: orderly-payment
     runtime: docker
+    plan: free
     dockerContext: .
     dockerfilePath: services/payment/Dockerfile
     healthCheckPath: /health
@@ -139,7 +161,13 @@ services:
       - key: KAFKA_LOG_LEVEL
         value: info
       - key: ORDER_SERVICE_URL
-        value: http://orderly-order:10000 # Render private network
+        # Public HTTPS base URL of orderly-order (e.g.
+        # https://orderly-order.onrender.com), resolved by Render from the
+        # target service's onrender.com hostname on every Blueprint sync.
+        fromService:
+          name: orderly-order
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
       - key: RAZORPAY_KEY_ID
         sync: false # REQUIRED: code ships with a hardcoded test key
       - key: RAZORPAY_KEY_SECRET
@@ -148,6 +176,7 @@ services:
   - type: web
     name: orderly-delivery
     runtime: docker
+    plan: free
     dockerContext: .
     dockerfilePath: services/delivery/Dockerfile
     healthCheckPath: /health
@@ -166,6 +195,7 @@ services:
   - type: web
     name: orderly-notification
     runtime: docker
+    plan: free
     dockerContext: .
     dockerfilePath: services/notification/Dockerfile
     healthCheckPath: /health
