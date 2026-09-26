@@ -6,3 +6,7 @@ packages:
 allowBuilds:
   esbuild: true
   unrs-resolver: false
+
+# pnpm v10 requirement for `pnpm deploy`: inject workspace packages as real
+# copies instead of symlinks so production images are self-contained.
+injectWorkspacePackages: true

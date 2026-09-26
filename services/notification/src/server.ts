@@ -41,12 +41,8 @@ app.get("/health", (_req, res) => {
 const port = Number(process.env.PORT ?? 3007);
 
 async function start(): Promise<void> {
-  try {
-    await kafkaNotificationConsumer.start();
-    console.log(`[Notification] Kafka consumer connected`);
-  } catch {
-    console.log(`[Notification] Event broker offline (${process.env.KAFKA_BROKERS ?? "localhost:9092"}). Running in standalone mode.`);
-  }
+  await kafkaNotificationConsumer.start();
+  console.log(`[Notification] Kafka consumer connected`);
 
   app.listen(port, () => {
     console.log(`Notification service running on port ${port}`);
@@ -61,4 +57,7 @@ async function shutdown(signal: string): Promise<void> {
 process.once("SIGINT", () => void shutdown("SIGINT"));
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
-void start();
+start().catch((error: unknown) => {
+  console.error("[Notification] Fatal: unable to reach Kafka event broker; exiting", error);
+  process.exit(1);
+});
