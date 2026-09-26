@@ -22,7 +22,7 @@ services:
     name: orderly-gateway
     runtime: docker
     dockerContext: .
-    dockerPath: apps/gateway/Dockerfile
+    dockerfilePath: apps/gateway/Dockerfile
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -77,7 +77,7 @@ services:
     name: orderly-identity
     runtime: docker
     dockerContext: .
-    dockerPath: services/identity/Dockerfile
+    dockerfilePath: services/identity/Dockerfile
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -93,7 +93,7 @@ services:
     name: orderly-restaurant
     runtime: docker
     dockerContext: .
-    dockerPath: services/restaurant/Dockerfile
+    dockerfilePath: services/restaurant/Dockerfile
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -105,7 +105,7 @@ services:
     name: orderly-order
     runtime: docker
     dockerContext: .
-    dockerPath: services/order/Dockerfile
+    dockerfilePath: services/order/Dockerfile
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -125,7 +125,7 @@ services:
     name: orderly-payment
     runtime: docker
     dockerContext: .
-    dockerPath: services/payment/Dockerfile
+    dockerfilePath: services/payment/Dockerfile
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -149,7 +149,7 @@ services:
     name: orderly-delivery
     runtime: docker
     dockerContext: .
-    dockerPath: services/delivery/Dockerfile
+    dockerfilePath: services/delivery/Dockerfile
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -167,7 +167,7 @@ services:
     name: orderly-notification
     runtime: docker
     dockerContext: .
-    dockerPath: services/notification/Dockerfile
+    dockerfilePath: services/notification/Dockerfile
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
