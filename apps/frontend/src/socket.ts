@@ -1,13 +1,13 @@
 import { io, Socket } from 'socket.io-client';
 
-const SOCKET_URL = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+const SOCKET_URL = typeof window !== 'undefined' ? (import.meta.env.VITE_SOCKET_URL || 'http://localhost:5001') : 'http://localhost:5001';
 
 export const socket: Socket = io(SOCKET_URL, {
   autoConnect: false,
   reconnection: true,
   reconnectionAttempts: 3,
   reconnectionDelay: 5000,
-  transports: ['websocket', 'polling'],
+  transports: ['polling', 'websocket'],
 });
 
 socket.on('connect_error', (error) => {

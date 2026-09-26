@@ -74,7 +74,7 @@ export default function RestaurantOrders() {
 
       const handleNewOrder = (data) => {
         notification.success({
-          message: 'New Order Received!',
+          title: 'New Order Received!',
           description: `Order #${data.orderId.slice(0, 8)} has been placed.`,
         });
         fetchOrders();
@@ -113,13 +113,13 @@ export default function RestaurantOrders() {
 
       if (data.success) {
         notification.success({
-          message: `Order marked as ${newStatus}`
+          title: `Order marked as ${newStatus}`
         });
         fetchOrders();
       }
     } catch (error) {
       notification.error({
-        message: 'Error updating order status'
+        title: 'Error updating order status'
       });
     }
   };

@@ -130,7 +130,7 @@ export default function DeliveryLayout() {
       };
       setNotificationsList((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
       notification.info({
-        message: notif.title,
+        title: notif.title,
         description: notif.message || 'You have a new update.',
         placement: 'topRight',
         duration: 4.5,
@@ -153,7 +153,7 @@ export default function DeliveryLayout() {
         token
       }));
       notification.success({
-        message: 'Account Approved! 🎉',
+        title: 'Account Approved! 🎉',
         description: 'Your delivery partner account has been verified and approved by admin!',
         placement: 'topRight',
         duration: 6,
@@ -175,7 +175,7 @@ export default function DeliveryLayout() {
       };
       setNotificationsList(prev => [notif, ...prev]);
       notification.info({
-        message: `New Delivery Request #${orderNum}`,
+        title: `New Delivery Request #${orderNum}`,
         description: 'A new order is available for pickup. Open Orders to accept.',
         placement: 'topRight',
         duration: 5,
@@ -197,7 +197,7 @@ export default function DeliveryLayout() {
       };
       setNotificationsList(prev => [notif, ...prev]);
       notification.info({
-        message: `Order #${orderNum} Ready!`,
+        title: `Order #${orderNum} Ready!`,
         description: 'Restaurant has marked this order ready for pickup.',
         placement: 'topRight',
         duration: 4.5,
@@ -218,7 +218,7 @@ export default function DeliveryLayout() {
       };
       setNotificationsList(prev => [notif, ...prev]);
       notification.success({
-        message: `Order #${orderNum} Assigned`,
+        title: `Order #${orderNum} Assigned`,
         description: 'You have been assigned to deliver this order.',
         placement: 'topRight',
         duration: 5,

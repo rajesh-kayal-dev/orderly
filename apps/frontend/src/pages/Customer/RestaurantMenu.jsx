@@ -115,7 +115,7 @@ export default function RestaurantMenu() {
         setRestaurantClosed(true);
         setClosedMessage(`${data.name || 'This restaurant'} is currently closed.`);
         notification.warning({
-          message: 'Restaurant closed',
+          title: 'Restaurant closed',
           description: `${data.name || 'This restaurant'} is no longer accepting orders.`,
           placement: 'topRight'
         });
@@ -145,7 +145,7 @@ export default function RestaurantMenu() {
   const handleAdd = async (item) => {
     if (restaurantClosed || (restaurant && !restaurant.is_open)) {
       notification.warning({
-        message: 'Restaurant is closed',
+        title: 'Restaurant is closed',
         description: 'You cannot add items while this restaurant is closed.',
         placement: 'topRight'
       });
@@ -155,7 +155,7 @@ export default function RestaurantMenu() {
     const isAvailable = item.is_available !== false && item.is_in_stock !== false && item.in_stock !== false && item.status !== 'OUT_OF_STOCK' && item.status !== 'UNAVAILABLE';
     if (!isAvailable) {
       notification.warning({
-        message: 'Item Out of Stock',
+        title: 'Item Out of Stock',
         description: `Sorry, "${item.name}" is currently out of stock.`,
         placement: 'topRight'
       });
@@ -165,7 +165,7 @@ export default function RestaurantMenu() {
     const currentQty = getItemQuantity(item.id);
     if (currentQty >= 20) {
       notification.warning({
-        message: 'Limit Reached',
+        title: 'Limit Reached',
         description: `You already have 20 units of ${item.name} in your cart.`,
         placement: 'topRight'
       });
@@ -181,14 +181,14 @@ export default function RestaurantMenu() {
       }));
 
       notification.success({
-        message: 'Added to Cart',
+        title: 'Added to Cart',
         description: `${item.name} added to cart!`,
         placement: 'bottomRight',
         duration: 1.5,
       });
     } catch (error) {
       notification.success({
-        message: 'Added to Cart',
+        title: 'Added to Cart',
         description: `${item.name} added to cart!`,
         placement: 'bottomRight',
         duration: 1.5,

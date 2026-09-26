@@ -171,10 +171,15 @@ export const App: React.FC = () => {
   const initAuth = useCallback(async () => {
     const activeToken =
       typeof window !== 'undefined'
-        ? localStorage.getItem('token') || sessionStorage.getItem('token')
-        : null;
+        ? localStorage.getItem('token')
+      : null;
 
     if (!activeToken || activeToken === 'undefined' || activeToken === 'null') {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
+        sessionStorage.removeItem('profile');
+      }
       dispatch(setAuthInitialized({ status: 'unauthenticated' }));
       return;
     }
@@ -183,6 +188,12 @@ export const App: React.FC = () => {
       const response = await apiClient.get('/auth/profile', {
         headers: { Authorization: `Bearer ${activeToken}` },
       });
+
+      // Check if user logged out while profile request was in flight
+      const currentToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      if (!currentToken || currentToken !== activeToken) {
+        return;
+      }
 
       if (response.data?.success) {
         const data = response.data.data;

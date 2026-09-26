@@ -86,18 +86,20 @@ test.describe("Phase 6: Admin Lifecycle Management & Realtime Feedback", () => {
       await adminPage.waitForTimeout(1000);
     }
 
-    // Customer places order successfully
-    await customerPage.goto("/customer/checkout");
-    await customerPage.waitForLoadState("domcontentloaded");
+    // Customer logs in with restored active account and places order successfully
+    await customerAuth.login(testCustomer.email, testCustomer.password);
+    await customerOrder.selectFirstRestaurant();
+    await customerOrder.addFirstAvailableItemToCart();
+    await customerOrder.gotoCart();
+    await customerOrder.proceedToCheckout();
+
     const codOptionAfterRestore = customerPage.getByText(/Cash on Delivery/i).first();
-    if (await codOptionAfterRestore.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await codOptionAfterRestore.click();
-    }
+    await expect(codOptionAfterRestore).toBeVisible({ timeout: 10_000 });
+    await codOptionAfterRestore.click();
+
     const placeBtnAfterRestore = customerPage.getByRole("button", { name: /Place Order|COD/i });
-    if (await placeBtnAfterRestore.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await placeBtnAfterRestore.click({ timeout: 5000 }).catch(() => {});
-      await expect(customerPage.getByText(/Order Placed Successfully/i)).toBeVisible({ timeout: 15_000 }).catch(() => {});
-    }
+    await placeBtnAfterRestore.click();
+    await expect(customerPage.getByText(/Order Placed Successfully/i)).toBeVisible({ timeout: 15_000 });
 
     // -------------------------------------------------------------
     // 4. RESTAURANT KITCHEN & DELIVERY WORKFLOW

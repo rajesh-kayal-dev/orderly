@@ -29,7 +29,7 @@ enum PaymentStatus {
 enum PaymentMethod {
   cod
   online
-  vnpay
+
   razorpay
 }
 

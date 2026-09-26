@@ -51,7 +51,7 @@ export default function CustomerLayout({ children }: CustomerLayoutProps = {}) {
         const orderNum = data.orderId ? data.orderId.slice(0, 8).toUpperCase() : 'your order';
         const formattedStatus = String(data.status).replace(/_/g, ' ').toUpperCase();
         notification.info({
-          message: `Order #${orderNum} Update`,
+          title: `Order #${orderNum} Update`,
           description: `Your order status is now: ${formattedStatus}`,
           placement: 'topRight',
           duration: 5,
@@ -62,7 +62,7 @@ export default function CustomerLayout({ children }: CustomerLayoutProps = {}) {
     const handleNewNotification = (data: any) => {
       if (!data) return;
       notification.info({
-        message: data.title || 'Orderly Update',
+        title: data.title || 'Orderly Update',
         description: data.message || '',
         placement: 'topRight',
         duration: 4.5,

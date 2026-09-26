@@ -161,13 +161,13 @@ export default function CartPage() {
       if (items.some(i => i.id === data.itemId)) {
         if (!data.isAvailable) {
           notification.warning({
-            message: 'Item Unavailable',
+            title: 'Item Unavailable',
             description: `"${data.name}" has just gone Out of Order and will be excluded.`,
             duration: 5
           });
         } else {
           notification.success({
-            message: 'Item Back in Stock!',
+            title: 'Item Back in Stock!',
             description: `"${data.name}" is available again.`,
             duration: 3
           });

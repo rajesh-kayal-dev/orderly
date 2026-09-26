@@ -20,7 +20,7 @@ if (PORT !== 8000) {
   const secondaryServer = http.createServer(app);
   initSocketServer(secondaryServer);
   secondaryServer.listen(8000, () => {
-    console.log(`Orderly API Gateway secondary listener active at http://localhost:8000`);
+    console.log(`Orderly API Gateway secondary listener active on port 8000`);
   }).on('error', (err) => {
     console.warn(`[Gateway Port 8000] Notice: Port 8000 already in use or unavailable (${err.message})`);
   });

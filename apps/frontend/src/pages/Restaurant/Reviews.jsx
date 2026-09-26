@@ -33,7 +33,7 @@ export default function RestaurantReviews() {
     } catch (err) {
       console.error('Error fetching restaurant reviews:', err);
       notification.error({
-        message: 'Failed to load customer feedback',
+        title: 'Failed to load customer feedback',
         description: err.response?.data?.message || err.message,
         placement: 'topRight'
       });
@@ -63,7 +63,7 @@ export default function RestaurantReviews() {
         });
 
         notification.info({
-          message: `New Feedback: "${fb.sentiment}"`,
+          title: `New Feedback: "${fb.sentiment}"`,
           description: `${fb.customer_name || 'Customer'} submitted feedback for order #${(fb.order_id || '').slice(0, 8).toUpperCase()}`,
           placement: 'topRight'
         });

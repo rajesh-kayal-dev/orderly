@@ -1,5 +1,6 @@
 import { Server as SocketIOServer } from "socket.io";
 import type { Server as HttpServer } from "http";
+import { createOriginVerifier } from "./allowed-origins.js";
 
 let ioInstance: SocketIOServer | null = null;
 
@@ -10,7 +11,7 @@ export function initSocketServer(server: HttpServer): SocketIOServer {
 
   const io = new SocketIOServer(server, {
     cors: {
-      origin: "*",
+      origin: createOriginVerifier(),
       methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
       credentials: true,
     },

@@ -93,4 +93,11 @@ export class DeliveryPage {
     await completeBtn.dispatchEvent("click");
     await this.page.waitForTimeout(1500);
   }
+
+  async completeFullDeliveryLifecycle() {
+    await this.arriveAtRestaurant();
+    await this.pickupDelivery();
+    await this.startDelivery();
+    await this.completeDelivery();
+  }
 }

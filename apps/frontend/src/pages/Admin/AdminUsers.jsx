@@ -37,7 +37,7 @@ export default function AdminUsers() {
     } catch (error) {
       console.error('Error fetching users:', error);
       notification.error({
-        message: 'Failed to load users',
+        title: 'Failed to load users',
         description: error.response?.data?.message || error.message,
         placement: 'topRight'
       });
@@ -73,7 +73,7 @@ export default function AdminUsers() {
   const handleStatusChange = (user, nextStatus, title) => {
     if (user.role === 'admin') {
       notification.warning({
-        message: 'Action Restricted',
+        title: 'Action Restricted',
         description: 'System administrators cannot be modified or suspended.',
         placement: 'topRight'
       });
@@ -115,7 +115,7 @@ export default function AdminUsers() {
           });
           if (response.data.success) {
             notification.success({
-              message: 'User Status Updated',
+              title: 'User Status Updated',
               description: `${user.full_name || user.email} is now ${nextStatus}.`,
               placement: 'topRight'
             });
@@ -123,7 +123,7 @@ export default function AdminUsers() {
           }
         } catch (error) {
           notification.error({
-            message: 'Status Update Failed',
+            title: 'Status Update Failed',
             description: error.response?.data?.message || error.message,
             placement: 'topRight'
           });
@@ -135,7 +135,7 @@ export default function AdminUsers() {
   const handleSoftDelete = (user) => {
     if (user.role === 'admin') {
       notification.warning({
-        message: 'Action Restricted',
+        title: 'Action Restricted',
         description: 'System administrators cannot be deleted or archived.',
         placement: 'topRight'
       });
@@ -174,7 +174,7 @@ export default function AdminUsers() {
           });
           if (response.data.success) {
             notification.success({
-              message: 'Account Archived',
+              title: 'Account Archived',
               description: `${user.full_name || user.email} was successfully archived.`,
               placement: 'topRight'
             });
@@ -182,7 +182,7 @@ export default function AdminUsers() {
           }
         } catch (error) {
           notification.error({
-            message: 'Archival Failed',
+            title: 'Archival Failed',
             description: error.response?.data?.message || error.message,
             placement: 'topRight'
           });

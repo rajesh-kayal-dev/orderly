@@ -13,7 +13,7 @@ export type OrderStatus =
 
 export type PaymentStatus = "pending" | "paid" | "cancelled" | "refunded";
 
-export type PaymentMethod = "cod" | "online" | "vnpay" | "razorpay";
+export type PaymentMethod = "cod" | "online" | "razorpay";
 
 export interface ContactInfoSnapshot {
   fullName: string;
