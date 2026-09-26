@@ -19,9 +19,27 @@ export async function ensureTopics(kafka: Kafka): Promise<TopicSpec[]> {
   const admin = kafka.admin();
   await admin.connect();
   try {
-    const topics = topicSpecs();
-    await admin.createTopics({ topics });
-    return topics;
+    // Fetch existing topics to avoid recreating them
+    const existingTopics = await admin.listTopics();
+
+    // Determine which topics are missing
+    const desiredTopics = topicSpecs();
+    const missingTopics = desiredTopics.filter(
+      (t) => !existingTopics.includes(t.topic)
+    );
+
+    if (missingTopics.length > 0) {
+      // Redpanda Serverless requires a minimum replication factor of 3.
+      // Use replication factor 3 for any topics that need to be created.
+      const topicsToCreate = missingTopics.map((t) => ({
+        ...t,
+        replicationFactor: 3,
+      }));
+      await admin.createTopics({ topics: topicsToCreate });
+    }
+
+    // Return the full list of desired topics (as before)
+    return desiredTopics;
   } finally {
     await admin.disconnect();
   }
