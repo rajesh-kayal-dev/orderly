@@ -21,7 +21,10 @@ services:
   - type: web
     name: orderly-gateway
     runtime: docker
+<<<<<<< HEAD
     plan: free
+=======
+>>>>>>> origin/main
     dockerContext: .
     dockerfilePath: apps/gateway/Dockerfile
     healthCheckPath: /health
@@ -73,11 +76,18 @@ services:
       - key: DISPATCH_MAX_RADIUS_KM
         value: "15"
 
+<<<<<<< HEAD
   # ---------------- Internal services ----------------
   - type: web
     name: orderly-identity
     runtime: docker
     plan: free
+=======
+  # ---------------- Internal services (private network) ----------------
+  - type: web
+    name: orderly-identity
+    runtime: docker
+>>>>>>> origin/main
     dockerContext: .
     dockerfilePath: services/identity/Dockerfile
     healthCheckPath: /health
@@ -94,7 +104,10 @@ services:
   - type: web
     name: orderly-restaurant
     runtime: docker
+<<<<<<< HEAD
     plan: free
+=======
+>>>>>>> origin/main
     dockerContext: .
     dockerfilePath: services/restaurant/Dockerfile
     healthCheckPath: /health
@@ -107,7 +120,10 @@ services:
   - type: web
     name: orderly-order
     runtime: docker
+<<<<<<< HEAD
     plan: free
+=======
+>>>>>>> origin/main
     dockerContext: .
     dockerfilePath: services/order/Dockerfile
     healthCheckPath: /health
@@ -128,7 +144,10 @@ services:
   - type: web
     name: orderly-payment
     runtime: docker
+<<<<<<< HEAD
     plan: free
+=======
+>>>>>>> origin/main
     dockerContext: .
     dockerfilePath: services/payment/Dockerfile
     healthCheckPath: /health
@@ -153,7 +172,10 @@ services:
   - type: web
     name: orderly-delivery
     runtime: docker
+<<<<<<< HEAD
     plan: free
+=======
+>>>>>>> origin/main
     dockerContext: .
     dockerfilePath: services/delivery/Dockerfile
     healthCheckPath: /health
@@ -172,7 +194,10 @@ services:
   - type: web
     name: orderly-notification
     runtime: docker
+<<<<<<< HEAD
     plan: free
+=======
+>>>>>>> origin/main
     dockerContext: .
     dockerfilePath: services/notification/Dockerfile
     healthCheckPath: /health
@@ -186,4 +211,8 @@ services:
       - key: KAFKA_CLIENT_ID
         value: notification-service
       - key: KAFKA_LOG_LEVEL
+<<<<<<< HEAD
         value: info
+=======
+        value: info
+>>>>>>> origin/main
