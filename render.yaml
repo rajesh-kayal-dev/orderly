@@ -1,0 +1,182 @@
+# Orderly production Blueprint — backend services only.
+#
+# Applies to: Render (Docker runtime), branch main.
+# - Frontend is deployed separately to Vercel (NOT part of this Blueprint).
+# - PostgreSQL is external (Neon) via DATABASE_URL — not deployed here.
+# - Kafka is external (managed broker) via KAFKA_BROKERS — not deployed here.
+#
+# Every image is built from the repository ROOT as Docker build context
+# (dockerContext: .) because each Dockerfile copies workspace-level files
+# (pnpm-workspace.yaml, pnpm-lock.yaml, packages/, turbo.json, ...).
+#
+# Services communicate over Render's private network using the service name
+# as hostname and the PORT Render provides (10000 by default), hence
+# RESTAURANT_SERVICE_URL / ORDER_SERVICE_URL point at :10000.
+#
+# Secrets use `sync: false` with no value: they are entered manually in the
+# Render dashboard (or prompted at Blueprint apply time) and never stored here.
+
+services:
+  # ---------------- Public API entrypoint ----------------
+  - type: web
+    name: orderly-gateway
+    runtime: docker
+    dockerContext: .
+    dockerPath: apps/gateway/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false # Neon PostgreSQL connection string (use sslmode)
+      - key: JWT_SECRET
+        sync: false # production HS256 secret for gateway-issued tokens
+      - key: FRONTEND_URL
+        sync: false # Vercel deployment URL(s), comma-separated
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CALLBACK_URL
+        sync: false # e.g. https://<vercel-app>/api/auth/google/callback
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: VNPAY_TMN_CODE
+        sync: false # REQUIRED: code ships with a hardcoded test value
+      - key: VNPAY_HASH_SECRET
+        sync: false # REQUIRED: code ships with a hardcoded test value
+      - key: VNPAY_URL
+        sync: false # defaults to VNPAY sandbox if unset
+      - key: VNPAY_RETURN_URL
+        sync: false # defaults to localhost if unset
+      - key: MAIL_HOST
+        value: smtp.gmail.com
+      - key: MAIL_PORT
+        value: "587"
+      - key: MAIL_SECURE
+        value: "false"
+      - key: MAIL_USER
+        sync: false
+      - key: MAIL_PASS
+        sync: false
+      - key: MAIL_FROM
+        value: no-reply@orderly.com
+      - key: ADMIN_EMAIL
+        sync: false # seed/admin login email (do not use the code default)
+      - key: ADMIN_PASSWORD
+        sync: false # seed/admin login password (do not use the code default)
+      - key: DISPATCH_OFFER_TIMEOUT_MS
+        value: "15000"
+      - key: DISPATCH_INITIAL_RADIUS_KM
+        value: "3"
+      - key: DISPATCH_MAX_RADIUS_KM
+        value: "15"
+
+  # ---------------- Internal services (private network) ----------------
+  - type: web
+    name: orderly-identity
+    runtime: docker
+    dockerContext: .
+    dockerPath: services/identity/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_PRIVATE_KEY
+        sync: false # REQUIRED: code falls back to a dev key if unset
+      - key: JWT_PUBLIC_KEY
+        sync: false # REQUIRED: every other service verifies with this
+      - key: JWT_EXPIRES_IN
+        value: 1d
+
+  - type: web
+    name: orderly-restaurant
+    runtime: docker
+    dockerContext: .
+    dockerPath: services/restaurant/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_PUBLIC_KEY
+        sync: false # must match the identity service's public key
+
+  - type: web
+    name: orderly-order
+    runtime: docker
+    dockerContext: .
+    dockerPath: services/order/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_PUBLIC_KEY
+        sync: false
+      - key: KAFKA_BROKERS
+        sync: false # managed Kafka bootstrap servers (host:port, comma-separated)
+      - key: KAFKA_CLIENT_ID
+        value: order-service
+      - key: KAFKA_LOG_LEVEL
+        value: info
+      - key: RESTAURANT_SERVICE_URL
+        value: http://orderly-restaurant:10000 # Render private network
+
+  - type: web
+    name: orderly-payment
+    runtime: docker
+    dockerContext: .
+    dockerPath: services/payment/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_PUBLIC_KEY
+        sync: false
+      - key: KAFKA_BROKERS
+        sync: false
+      - key: KAFKA_CLIENT_ID
+        value: payment-service
+      - key: KAFKA_LOG_LEVEL
+        value: info
+      - key: ORDER_SERVICE_URL
+        value: http://orderly-order:10000 # Render private network
+      - key: RAZORPAY_KEY_ID
+        sync: false # REQUIRED: code ships with a hardcoded test key
+      - key: RAZORPAY_KEY_SECRET
+        sync: false # REQUIRED: code ships with a hardcoded test secret
+
+  - type: web
+    name: orderly-delivery
+    runtime: docker
+    dockerContext: .
+    dockerPath: services/delivery/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_PUBLIC_KEY
+        sync: false
+      - key: KAFKA_BROKERS
+        sync: false
+      - key: KAFKA_CLIENT_ID
+        value: delivery-service
+      - key: KAFKA_LOG_LEVEL
+        value: info
+
+  - type: web
+    name: orderly-notification
+    runtime: docker
+    dockerContext: .
+    dockerPath: services/notification/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_PUBLIC_KEY
+        sync: false
+      - key: KAFKA_BROKERS
+        sync: false
+      - key: KAFKA_CLIENT_ID
+        value: notification-service
+      - key: KAFKA_LOG_LEVEL
+        value: info
