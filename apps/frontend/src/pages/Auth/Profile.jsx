@@ -139,10 +139,10 @@ export default function Profile() {
                       profile: activeProfile,
                       token,
                     }));
-                    notification.success({ message: 'Profile Saved', description: 'Your profile changes have been updated successfully.', placement: 'topRight' });
+                    notification.success({ title: 'Profile Saved', description: 'Your profile changes have been updated successfully.', placement: 'topRight' });
                   }
                 } catch (err) {
-                  notification.error({ message: 'Update Failed', description: err.response?.data?.message || 'Something went wrong.' });
+                  notification.error({ title: 'Update Failed', description: err.response?.data?.message || 'Something went wrong.' });
                 } finally {
                   setLoading(false);
                   setSubmitting(false);

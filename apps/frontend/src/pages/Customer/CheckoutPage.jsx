@@ -172,7 +172,7 @@ export default function CheckoutPage() {
       setSelectedAddressId(`loc-${Date.now()}`);
       setLocating(false);
       notification.info({
-        message: 'Delivery Location Set',
+        title: 'Delivery Location Set',
         description: `${fallbackAddress} (${reason})`,
         placement: 'topRight',
         duration: 3
@@ -211,7 +211,7 @@ export default function CheckoutPage() {
             setSelectedAddressId(`gps-${Date.now()}`);
 
             notification.success({
-              message: 'Location Updated!',
+              title: 'Location Updated!',
               description: formattedAddress,
               placement: 'topRight'
             });
@@ -235,7 +235,7 @@ export default function CheckoutPage() {
   const handlePlaceOrder = async () => {
     if (!address.trim() || !phone.trim()) {
       notification.warning({
-        message: 'Incomplete Information',
+        title: 'Incomplete Information',
         description: 'Please ensure your delivery address and phone number are filled.',
         placement: 'topRight'
       });
@@ -244,7 +244,7 @@ export default function CheckoutPage() {
 
     if (isGuest && !fullName.trim()) {
       notification.warning({
-        message: 'Name Required',
+        title: 'Name Required',
         description: 'Please enter your full name for order delivery.',
         placement: 'topRight'
       });
@@ -258,8 +258,6 @@ export default function CheckoutPage() {
 
       if (paymentMethod === 'razorpay') {
         await handleRazorpayFlow();
-      } else if (paymentMethod === 'vnpay') {
-        await handleVNPayFlow();
       } else {
         await handleCODFlow();
       }
@@ -286,7 +284,7 @@ export default function CheckoutPage() {
         const errorMsg = error.response?.data?.message || error.message || 'Payment could not be completed.';
         setPaymentError(errorMsg);
         notification.error({
-          message: 'Payment Unsuccessful',
+          title: 'Payment Unsuccessful',
           description: `${errorMsg}. You can select another payment method like Cash on Delivery below.`,
           placement: 'topRight'
         });
@@ -348,77 +346,7 @@ export default function CheckoutPage() {
     }
   };
 
-  const handleVNPayFlow = async () => {
-    const cartSnapshotItems = items.map(i => ({
-      menuItem: { name: i.name, image_url: i.image },
-      quantity: i.quantity,
-      unit_price: i.price
-    }));
 
-    const idempotencyKey = `idemp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-
-    const orderData = {
-      delivery_address_id: selectedAddressId || 'default-loc-id',
-      delivery_address: address,
-      deliveryAddress: { street: address },
-      contact_info: {
-        fullName: fullName || 'Guest Customer',
-        phoneNumber: phone,
-        email: email || null,
-      },
-      phone_number: phone,
-      payment_method: 'vnpay',
-      notes: notes || 'No notes provided',
-      idempotency_key: idempotencyKey,
-      coupon_code: appliedCoupon?.code || null,
-      couponCode: appliedCoupon?.code || null,
-      items: items.map(i => ({ menu_item_id: i.id, menuItemId: i.id, quantity: i.quantity, price: i.price, restaurant_id: i.restaurant_id || 1 }))
-    };
-
-    const orderRes = await axios.post('/orders', orderData, {
-      headers: { 'x-idempotency-key': idempotencyKey }
-    });
-    if (!orderRes.data.success) throw new Error('Failed to create order');
-    const createdOrder = orderRes.data.data;
-
-    try {
-      const vnpayRes = await axios.post('/payments/vnpay/create-url', {
-        orderId: createdOrder.id,
-        amount: createdOrder.total || grandTotal,
-        returnUrl: `${window.location.origin}/customer/orders`
-      });
-
-      if (vnpayRes.data.success && vnpayRes.data.data?.paymentUrl) {
-        notification.info({
-          message: 'Redirecting to VNPay Sandbox',
-          description: 'Proceeding to VNPay secure checkout...',
-          duration: 3
-        });
-
-        createdOrder.items = cartSnapshotItems;
-        createdOrder.appliedCoupon = appliedCoupon;
-        createdOrder.subtotal = createdOrder.subtotal !== undefined ? createdOrder.subtotal : subtotal;
-        createdOrder.discountAmount = createdOrder.discount_amount !== undefined ? createdOrder.discount_amount : discountAmount;
-        createdOrder.deliveryFee = createdOrder.delivery_fee !== undefined ? createdOrder.delivery_fee : deliveryFee;
-        createdOrder.platformFee = createdOrder.platform_fee !== undefined ? createdOrder.platform_fee : platformFee;
-        createdOrder.gst = createdOrder.tax !== undefined ? createdOrder.tax : gst;
-        createdOrder.grandTotal = createdOrder.total !== undefined ? createdOrder.total : grandTotal;
-
-        sessionStorage.setItem('last_guest_order_id', createdOrder.id);
-        setSuccessOrder(createdOrder);
-        sessionStorage.removeItem('orderly_applied_coupon');
-        await dispatch(clearCartAsync());
-
-        setTimeout(() => {
-          window.location.href = vnpayRes.data.data.paymentUrl;
-        }, 1200);
-        return;
-      }
-    } catch (vnpErr) {
-      await axios.post('/payments/failure', { orderId: createdOrder.id, reason: 'VNPay initiation failed' }).catch(() => {});
-      throw new Error('VNPay payment initiation could not be completed');
-    }
-  };
 
   const loadRazorpaySDK = () => {
     return new Promise((resolve) => {
@@ -443,7 +371,7 @@ export default function CheckoutPage() {
 
     const loaded = await loadRazorpaySDK();
     if (!loaded || !window.Razorpay) {
-      notification.error({ message: 'Payment SDK not loaded', description: 'Please check internet connection and try again.' });
+      notification.error({ title: 'Payment SDK not loaded', description: 'Please check internet connection and try again.' });
       return;
     }
 
@@ -481,10 +409,7 @@ export default function CheckoutPage() {
     const { razorpayOrderId, amount, currency, keyId } = paymentRes.data.data;
 
     await new Promise((resolve, reject) => {
-      const logoUrl =
-        typeof window !== 'undefined'
-          ? `${window.location.origin}/orderly-logo.png`
-          : '/orderly-logo.png';
+      const logoUrl = import.meta.env.VITE_RAZORPAY_LOGO_URL || 'https://ui-avatars.com/api/?name=Orderly&background=F97316&color=fff&size=256';
 
       const options = {
         key: keyId,
@@ -510,7 +435,7 @@ export default function CheckoutPage() {
             }).catch(() => {});
             setPaymentError('Payment cancelled. Your cart is preserved — you can retry or switch to COD below.');
             notification.warning({
-              message: 'Payment Cancelled',
+              title: 'Payment Cancelled',
               description: 'You cancelled the payment. You can choose Cash on Delivery or retry.',
               placement: 'topRight'
             });
@@ -576,7 +501,7 @@ export default function CheckoutPage() {
           reason: response.error?.description || 'Payment failed'
         }).catch(() => {});
         notification.error({
-          message: 'Payment Failed',
+          title: 'Payment Failed',
           description: response.error?.description || 'Your payment could not be processed. You can switch to COD.',
           placement: 'topRight'
         });
@@ -624,6 +549,17 @@ export default function CheckoutPage() {
             navigate('/customer/tracking');
           }}
         />
+      )}
+
+      {/* Loading Overlay */}
+      {loading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-8 flex flex-col items-center shadow-2xl animate-fade-in text-center max-w-sm w-full mx-4">
+            <LoadingOutlined className="text-orange-500 text-5xl mb-4" />
+            <h2 className="text-xl font-black text-neutral-900 mb-2">Processing Your Order</h2>
+            <p className="text-neutral-500 text-sm">Please wait while we confirm your details with the restaurant...</p>
+          </div>
+        </div>
       )}
 
       <div className="pb-16 animate-fade-in -mt-16 bg-neutral-50/60 min-h-screen">
@@ -1039,50 +975,7 @@ export default function CheckoutPage() {
                     </div>
                   </div>
 
-                  {/* VNPay Sandbox Option */}
-                  <div
-                    onClick={() => setPaymentMethod('vnpay')}
-                    className="p-3 rounded-2xl border-2 cursor-pointer transition-all mb-2"
-                    style={{
-                      borderColor: paymentMethod === 'vnpay' ? '#F97316' : '#E5E7EB',
-                      background: paymentMethod === 'vnpay' ? '#FFF7F0' : 'white'
-                    }}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-4 h-4 rounded-full border-2 flex items-center justify-center"
-                          style={{ borderColor: '#F97316' }}
-                        >
-                          {paymentMethod === 'vnpay' && (
-                            <div className="w-2 h-2 rounded-full" style={{ background: '#F97316' }} />
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <div
-                            className="px-2 py-0.5 rounded text-white font-black text-xs"
-                            style={{ background: '#005BAA' }}
-                          >
-                            VNPAY
-                          </div>
-                          <span
-                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                            style={{ background: '#E0F2FE', color: '#0369A1' }}
-                          >
-                            Sandbox Gateway
-                          </span>
-                        </div>
-                      </div>
-                    </div>
 
-                    <div className="flex items-center gap-1.5 pl-6 flex-wrap">
-                      {['VNPAY QR', 'Bank Transfer', 'Visa', 'MasterCard', 'JCB'].map(m => (
-                        <span key={m}
-                          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600"
-                        >{m}</span>
-                      ))}
-                    </div>
-                  </div>
 
                   {/* COD Option */}
                   <div
@@ -1126,11 +1019,6 @@ export default function CheckoutPage() {
                     ) : paymentMethod === 'razorpay' ? (
                       <>
                         <span>Pay ₹{grandTotal.toFixed(2)} with Razorpay</span>
-                        <span>→</span>
-                      </>
-                    ) : paymentMethod === 'vnpay' ? (
-                      <>
-                        <span>Pay ₹{grandTotal.toFixed(2)} with VNPay</span>
                         <span>→</span>
                       </>
                     ) : (

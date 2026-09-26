@@ -223,7 +223,7 @@ export default function DeliveryOrders() {
     if (!navigator.geolocation) {
       notification.error({ 
         title: 'Geolocation Error', 
-        message: 'Geolocation Error', 
+        title: 'Geolocation Error', 
         description: 'Geolocation is not supported by your browser.' 
       });
       return;
@@ -232,7 +232,7 @@ export default function DeliveryOrders() {
     setLocating(true);
     notification.info({ 
       title: 'Detecting Location', 
-      message: 'Detecting Location', 
+      title: 'Detecting Location', 
       description: 'Acquiring GPS position...' 
     });
 

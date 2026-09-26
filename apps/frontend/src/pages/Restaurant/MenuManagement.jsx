@@ -65,7 +65,7 @@ function AddCategoryInline({ onCreated }) {
             if (data.success && data.data) {
                 onCreated(data.data);          // lift the new category up
                 cancel();
-                notification.success({ message: `Category "${trimmed}" created!` });
+                notification.success({ title: `Category "${trimmed}" created!` });
             } else {
                 setError(data.message || 'Failed to create category.');
             }
@@ -201,7 +201,7 @@ export default function MenuManagement() {
             const msg = error.response?.status === 404
                 ? 'Menu route not found — please check the backend is running.'
                 : error.message || 'Failed to load menu items.';
-            notification.error({ message: 'Could not load menu', description: msg, duration: 5 });
+            notification.error({ title: 'Could not load menu', description: msg, duration: 5 });
             setItems([]);
             setTotal(0);
         } finally {
@@ -251,7 +251,7 @@ export default function MenuManagement() {
                     restaurant_id: profile?.id,
                     restaurantId: profile?.id
                 });
-                notification.success({ message: 'Item updated successfully' });
+                notification.success({ title: 'Item updated successfully' });
                 // Optimistically update item in list without waiting for refetch
                 if (res.success && res.data) {
                     setItems(prev => prev.map(it => it.id === editingItem.id ? { ...it, ...res.data } : it));
@@ -262,7 +262,7 @@ export default function MenuManagement() {
                     restaurant_id: profile?.id,
                     restaurantId: profile?.id
                 });
-                notification.success({ message: 'Item created successfully!' });
+                notification.success({ title: 'Item created successfully!' });
                 // Optimistically prepend the new item so it shows immediately
                 if (res.success && res.data) {
                     const categoryInfo = categories.find(c => c.id === values.category_id);
@@ -280,19 +280,19 @@ export default function MenuManagement() {
             fetchMenu();
         } catch (error) {
             console.error('Error saving menu item:', error);
-            notification.error({ message: error.response?.data?.message || 'Failed to save item' });
+            notification.error({ title: error.response?.data?.message || 'Failed to save item' });
         }
     };
 
     const handleDelete = async (id) => {
         try {
             await axios.delete(`/menu/${id}`);
-            notification.success({ message: 'Item deleted' });
+            notification.success({ title: 'Item deleted' });
             // Instantly remove from list without refetch
             setItems(prev => prev.filter(it => it.id !== id));
             setTotal(prev => Math.max(0, prev - 1));
         } catch (error) {
-            notification.error({ message: 'Failed to delete item' });
+            notification.error({ title: 'Failed to delete item' });
         }
     };
 
@@ -306,7 +306,7 @@ export default function MenuManagement() {
             const { data: res } = await axios.patch(`/menu/${id}/toggle-availability`, {});
             if (res.success) {
                 notification.success({
-                    message: newAvail ? 'Item Marked Available' : 'Item Marked Out of Stock',
+                    title: newAvail ? 'Item Marked Available' : 'Item Marked Out of Stock',
                     description: `"${itemToToggle?.name || 'Dish'}" is now ${newAvail ? 'available for customer orders' : 'marked Out of Stock on customer pages'}.`,
                     placement: 'topRight'
                 });
@@ -314,7 +314,7 @@ export default function MenuManagement() {
         } catch (error) {
             // Revert on failure
             setItems(prev => prev.map(it => it.id === id ? { ...it, is_available: !newAvail } : it));
-            notification.error({ message: 'Failed to update availability' });
+            notification.error({ title: 'Failed to update availability' });
         }
     };
 

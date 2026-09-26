@@ -43,7 +43,7 @@ export default function AdminFeedback() {
     } catch (err) {
       console.error('Error fetching admin feedback:', err);
       notification.error({
-        message: 'Failed to load feedback',
+        title: 'Failed to load feedback',
         description: err.response?.data?.message || err.message,
         placement: 'topRight'
       });
@@ -70,7 +70,7 @@ export default function AdminFeedback() {
       });
 
       notification.info({
-        message: `New Feedback: ${fb.sentiment}`,
+        title: `New Feedback: ${fb.sentiment}`,
         description: `${fb.customer_name || 'A customer'} rated order #${(fb.order_id || '').slice(0, 8).toUpperCase()}`,
         placement: 'topRight'
       });

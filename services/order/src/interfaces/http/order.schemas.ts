@@ -23,7 +23,7 @@ export const createOrderSchema = z.object({
   contactInfo: contactInfoSchema.optional(),
   deliveryFee: z.coerce.number().min(0).optional(),
   notes: z.string().trim().max(1000).optional(),
-  paymentMethod: z.enum(["cod", "online", "vnpay", "razorpay"]).optional(),
+  paymentMethod: z.enum(["cod", "online", "razorpay"]).optional(),
   idempotencyKey: z.string().trim().min(1).max(128).optional(),
 });
 

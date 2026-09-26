@@ -100,14 +100,14 @@ export default function DeliveryDashboard() {
       }
 
       notification.success({
-        message: 'Status Updated',
+        title: 'Status Updated',
         description: nextStatus ? 'You are now ONLINE and ready for orders.' : 'You are now OFFLINE.',
         placement: 'topRight'
       });
     } catch (error) {
       console.error('Error updating status:', error);
       setIsOnline(!nextStatus);
-      notification.error({ message: 'Failed to update status', placement: 'topRight' });
+      notification.error({ title: 'Failed to update status', placement: 'topRight' });
     } finally {
       setUpdatingStatus(false);
     }

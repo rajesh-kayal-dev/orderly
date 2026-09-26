@@ -28,6 +28,8 @@ import {
   SearchOutlined,
   UserOutlined,
   CloseCircleOutlined,
+  CloseOutlined,
+  CloseCircleFilled,
   FireOutlined,
   CheckOutlined,
   UnorderedListOutlined,
@@ -499,6 +501,28 @@ export default function OrderTracking() {
     };
   }, [token, urlOrderId, fetchOrders, openFeedbackModal]);
 
+  const handleCancelOrder = (orderToCancel) => {
+    Modal.confirm({
+      title: 'Cancel this order?',
+      content: 'Are you sure you want to cancel this order?',
+      okText: 'Cancel Order',
+      cancelText: 'Keep Order',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          const res = await axios.post(`/orders/${orderToCancel.id}/cancel`);
+          if (res.data.success) {
+            message.success('Your order has been cancelled successfully.');
+            // Update local state instantly
+            setActiveOrders(prev => prev.map(o => o.id === orderToCancel.id ? { ...o, status: 'cancelled' } : o));
+          }
+        } catch (error) {
+          message.error(error.response?.data?.message || 'Could not cancel order.');
+        }
+      }
+    });
+  };
+
   const currentOrder = activeOrders[selectedOrderIndex] || activeOrders[0] || null;
   const currentLevel = currentOrder ? getStatusLevel(currentOrder.status) : 1;
 
@@ -801,8 +825,8 @@ export default function OrderTracking() {
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 rounded-2xl bg-orange-50 overflow-hidden flex-shrink-0 border border-neutral-200/60 shadow-2xs">
                     <img
-                      src={currentOrder.restaurant?.logo}
-                      alt={currentOrder.restaurant?.name}
+                      src={currentOrder.restaurant?.image_url || currentOrder.restaurant?.logo || currentOrder.restaurant?.image || 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=500'}
+                      alt={currentOrder.restaurant?.name || 'Restaurant'}
                       className="w-full h-full object-cover"
                     />
                   </div>
@@ -828,6 +852,15 @@ export default function OrderTracking() {
 
                 {/* Call & Chat Action Buttons */}
                 <div className="flex items-center gap-3 self-start sm:self-center">
+                  {currentOrder.status === 'placed' && (
+                    <button
+                      onClick={() => handleCancelOrder(currentOrder)}
+                      className="px-4 py-2 bg-white border border-red-500 text-red-500 font-bold text-xs rounded-xl hover:bg-red-50 transition-colors shadow-2xs cursor-pointer"
+                    >
+                      Cancel Order
+                    </button>
+                  )}
+
                   <a
                     href={`tel:${currentOrder.restaurant?.phone || '+919834567890'}`}
                     className="px-4 py-2 bg-white border border-orange-400 text-orange-600 font-bold text-xs rounded-xl hover:bg-orange-50 transition-colors flex items-center gap-2 shadow-2xs"
@@ -841,12 +874,51 @@ export default function OrderTracking() {
                   >
                     <MessageOutlined /> Support
                   </button>
+
+                  {['cancelled', 'delivered', 'completed'].includes(currentOrder.status.toLowerCase()) && (
+                    <button
+                      onClick={handleReorderAll}
+                      className="px-4 py-2 bg-neutral-900 text-white font-bold text-xs rounded-xl hover:bg-neutral-800 transition-colors flex items-center gap-2 shadow-2xs cursor-pointer"
+                    >
+                      <ReloadOutlined /> Reorder
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* DYNAMIC STEPPER TIMELINE (6 STEPS) */}
+              {/* DYNAMIC STEPPER TIMELINE */}
               <div className="py-2">
-                <div className="flex items-center justify-between relative px-2">
+                {currentLevel === 0 ? (
+                  <div className="flex items-center justify-between relative px-2 sm:px-12 max-w-md mx-auto">
+                    {/* Connecting Track Line */}
+                    <div className="absolute top-[22px] left-[20%] right-[20%] h-1 bg-red-200 -z-0">
+                      <div className="h-full bg-red-500 w-full" />
+                    </div>
+
+                    {/* Step 1: Order Placed */}
+                    <div className="flex flex-col items-center text-center relative z-10 w-24">
+                      <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center font-bold text-sm sm:text-base transition-all bg-orange-500 text-white shadow-md">
+                        <CheckOutlined />
+                      </div>
+                      <p className="text-[11px] sm:text-xs font-bold text-neutral-900 mt-2 leading-tight">Order Placed</p>
+                      <p className="text-[10px] text-neutral-400 mt-0.5">
+                        {new Date(currentOrder.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+
+                    {/* Step 2: Order Cancelled */}
+                    <div className="flex flex-col items-center text-center relative z-10 w-24">
+                      <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center font-bold text-sm sm:text-base transition-all bg-red-500 text-white shadow-md ring-4 ring-red-100">
+                        <CloseOutlined />
+                      </div>
+                      <p className="text-[11px] sm:text-xs font-bold text-red-600 mt-2 leading-tight">Order Cancelled</p>
+                      <p className="text-[10px] text-neutral-400 mt-0.5">
+                        {new Date(currentOrder.updated_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between relative px-2">
                   
                   {/* Connecting Track Line */}
                   <div className="absolute top-[22px] left-[6%] right-[6%] h-1 bg-neutral-200 -z-0">
@@ -965,6 +1037,7 @@ export default function OrderTracking() {
                   </div>
 
                 </div>
+                )}
               </div>
 
               {/* Dynamic Status Banner Container */}
@@ -1028,8 +1101,14 @@ export default function OrderTracking() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="font-black text-neutral-900 text-xl">Live Location</h3>
-                    {currentLevel === 5 ? (
+                    <h3 className="font-black text-neutral-900 text-xl">
+                      {currentLevel === 0 ? 'Order Cancelled' : 'Live Location'}
+                    </h3>
+                    {currentLevel === 0 ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-100 text-red-700 text-[11px] font-extrabold border border-red-300">
+                        <CloseCircleFilled /> CANCELLED
+                      </span>
+                    ) : currentLevel === 5 ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-extrabold border border-emerald-300">
                         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                         LIVE GPS CONNECTED
@@ -1050,7 +1129,9 @@ export default function OrderTracking() {
                     )}
                   </div>
                   <p className="text-xs text-neutral-400 font-medium">
-                    {currentLevel === 5
+                    {currentLevel === 0
+                      ? 'Live delivery tracking is no longer available for this order.'
+                      : currentLevel === 5
                       ? 'Track your delivery partner moving in real time'
                       : currentLevel === 4
                       ? 'Delivery partner is reaching restaurant for pickup'
@@ -1061,42 +1142,45 @@ export default function OrderTracking() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <div className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-2 ${
-                    currentLevel === 5
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : currentLevel === 4
-                      ? 'bg-blue-50 text-blue-700 border-blue-200'
-                      : currentLevel >= 6
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : 'bg-neutral-50 text-neutral-600 border-neutral-200'
-                  }`}>
-                    {currentLevel === 5 ? (
-                      <>
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                        <span>Live Delivery In Transit</span>
-                      </>
-                    ) : currentLevel === 4 ? (
-                      <>
-                        <CarOutlined className="text-blue-600" />
-                        <span>Driver at Restaurant</span>
-                      </>
-                    ) : currentLevel >= 6 ? (
-                      <>
-                        <CheckCircleFilled className="text-emerald-600" />
-                        <span>Order Completed</span>
-                      </>
-                    ) : (
-                      <>
-                        <ClockCircleOutlined className="text-amber-500" />
-                        <span>Kitchen Preparing</span>
-                      </>
-                    )}
-                  </div>
+                  {currentLevel !== 0 && (
+                    <div className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-2 ${
+                      currentLevel === 5
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : currentLevel === 4
+                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                        : currentLevel >= 6
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-neutral-50 text-neutral-600 border-neutral-200'
+                    }`}>
+                      {currentLevel === 5 ? (
+                        <>
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                          <span>Live Delivery In Transit</span>
+                        </>
+                      ) : currentLevel === 4 ? (
+                        <>
+                          <CarOutlined className="text-blue-600" />
+                          <span>Driver at Restaurant</span>
+                        </>
+                      ) : currentLevel >= 6 ? (
+                        <>
+                          <CheckCircleFilled className="text-emerald-600" />
+                          <span>Order Completed</span>
+                        </>
+                      ) : (
+                        <>
+                          <ClockCircleOutlined className="text-amber-500" />
+                          <span>Kitchen Preparing</span>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Map Container */}
-              <div className="h-[380px] rounded-2xl overflow-hidden relative border border-neutral-200/80 shadow-inner z-0">
+              {/* Map Container - Hidden if cancelled */}
+              {currentLevel !== 0 && (
+                <div className="h-[380px] rounded-2xl overflow-hidden relative border border-neutral-200/80 shadow-inner z-0">
                 
                 {/* Floating Driver / Restaurant Info Overlay */}
                 {currentLevel >= 4 && currentOrder.driver?.hasDriver ? (
@@ -1187,8 +1271,8 @@ export default function OrderTracking() {
                     />
                   )}
                 </MapContainer>
-
               </div>
+              )}
 
             </div>
 
@@ -1326,7 +1410,7 @@ export default function OrderTracking() {
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-orange-50 overflow-hidden flex-shrink-0 border border-neutral-200/60 shadow-2xs">
-                    <img src={currentOrder.restaurant?.logo} alt={currentOrder.restaurant?.name} className="w-full h-full object-cover" />
+                    <img src={currentOrder.restaurant?.image_url || currentOrder.restaurant?.logo || currentOrder.restaurant?.image || 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=500'} alt={currentOrder.restaurant?.name || 'Restaurant'} className="w-full h-full object-cover" />
                   </div>
                   <div>
                     <h4 className="font-extrabold text-neutral-900 text-xs group-hover:text-orange-600 transition-colors">
@@ -1358,7 +1442,7 @@ export default function OrderTracking() {
                     <div key={idx} className="py-3 flex items-center justify-between gap-3 first:pt-0 last:pb-0">
                       <div className="flex items-center gap-3">
                         <div className="w-12 h-12 rounded-xl bg-neutral-100 overflow-hidden border border-neutral-200/60 flex-shrink-0">
-                          <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                          <img src={item.image_url || item.image || item.menuItem?.image_url || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=500'} alt={item.name} className="w-full h-full object-cover" />
                         </div>
                         <div>
                           <h5 className="font-extrabold text-neutral-900 text-xs leading-snug">{item.name}</h5>

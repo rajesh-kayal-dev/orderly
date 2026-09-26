@@ -41,7 +41,7 @@ export default function AdminDrivers() {
     } catch (err) {
       console.error('Error fetching drivers:', err);
       notification.error({
-        message: 'Failed to load delivery partners',
+        title: 'Failed to load delivery partners',
         description: err.response?.data?.message || err.message,
         placement: 'topRight'
       });
@@ -112,7 +112,7 @@ export default function AdminDrivers() {
           });
           if (res.data?.success) {
             notification.success({
-              message: 'Partner Status Updated',
+              title: 'Partner Status Updated',
               description: `${driver.name} is now ${nextStatus}.`,
               placement: 'topRight'
             });
@@ -120,7 +120,7 @@ export default function AdminDrivers() {
           }
         } catch (err) {
           notification.error({
-            message: 'Status Update Failed',
+            title: 'Status Update Failed',
             description: err.response?.data?.message || err.message,
             placement: 'topRight'
           });
@@ -162,7 +162,7 @@ export default function AdminDrivers() {
           });
           if (res.data?.success) {
             notification.success({
-              message: 'Partner Archived',
+              title: 'Partner Archived',
               description: `${driver.name} was successfully archived.`,
               placement: 'topRight'
             });
@@ -170,7 +170,7 @@ export default function AdminDrivers() {
           }
         } catch (err) {
           notification.error({
-            message: 'Archival Failed',
+            title: 'Archival Failed',
             description: err.response?.data?.message || err.message,
             placement: 'topRight'
           });

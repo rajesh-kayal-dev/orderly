@@ -42,7 +42,7 @@ export default function AdminRestaurants() {
     } catch (err) {
       console.error('Error fetching restaurants:', err);
       notification.error({
-        message: 'Failed to load restaurants',
+        title: 'Failed to load restaurants',
         description: err.response?.data?.message || err.message,
         placement: 'topRight'
       });
@@ -111,7 +111,7 @@ export default function AdminRestaurants() {
           });
           if (res.data?.success) {
             notification.success({
-              message: 'Restaurant Status Updated',
+              title: 'Restaurant Status Updated',
               description: `${restaurant.name} is now ${nextStatus}.`,
               placement: 'topRight'
             });
@@ -119,7 +119,7 @@ export default function AdminRestaurants() {
           }
         } catch (err) {
           notification.error({
-            message: 'Status Update Failed',
+            title: 'Status Update Failed',
             description: err.response?.data?.message || err.message,
             placement: 'topRight'
           });
@@ -164,7 +164,7 @@ export default function AdminRestaurants() {
           });
           if (res.data?.success) {
             notification.success({
-              message: 'Restaurant Archived',
+              title: 'Restaurant Archived',
               description: `${restaurant.name} was successfully archived.`,
               placement: 'topRight'
             });
@@ -172,7 +172,7 @@ export default function AdminRestaurants() {
           }
         } catch (err) {
           notification.error({
-            message: 'Archival Failed',
+            title: 'Archival Failed',
             description: err.response?.data?.message || err.message,
             placement: 'topRight'
           });

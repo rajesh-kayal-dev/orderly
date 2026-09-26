@@ -108,7 +108,7 @@ export default function AdminLayout() {
         };
         setNotificationsList(prev => [notif, ...prev]);
         notification.info({
-          message: notif.title,
+          title: notif.title,
           description: `Customer placed order for ₹${data?.total || 0}`,
           placement: 'topRight',
           duration: 4.5,
@@ -133,7 +133,7 @@ export default function AdminLayout() {
         };
         setNotificationsList(prev => [notif, ...prev]);
         notification.info({
-          message: notif.title,
+          title: notif.title,
           description: isDriver ? 'New driver pending approval.' : 'New restaurant pending approval.',
           placement: 'topRight',
           duration: 5,
@@ -151,7 +151,7 @@ export default function AdminLayout() {
         };
         setNotificationsList(prev => [notif, ...prev]);
         notification.info({
-          message: notif.title,
+          title: notif.title,
           placement: 'topRight',
           duration: 4,
         });
@@ -180,7 +180,7 @@ export default function AdminLayout() {
 
         setNotificationsList(prev => [newN, ...prev]);
         notification.info({
-          message: newN.title,
+          title: newN.title,
           description: notif?.message || 'New admin alert received.',
           placement: 'topRight',
           duration: 4.5,
@@ -198,7 +198,7 @@ export default function AdminLayout() {
         };
         setNotificationsList(prev => [notif, ...prev]);
         notification.info({
-          message: notif.title,
+          title: notif.title,
           placement: 'topRight',
           duration: 4,
         });

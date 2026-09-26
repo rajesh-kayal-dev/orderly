@@ -1,5 +1,6 @@
 import express, { type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
+import { createOriginVerifier } from "./allowed-origins.js";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
@@ -42,10 +43,7 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || "";
 
-const VNPAY_TMN_CODE = process.env.VNPAY_TMN_CODE || "2QXUI4J4";
-const VNPAY_HASH_SECRET = process.env.VNPAY_HASH_SECRET || "RA3KTPUAZ2KEUCJCLDUWVOARMDJOWM3C";
-const VNPAY_URL = process.env.VNPAY_URL || "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
-const VNPAY_RETURN_URL = process.env.VNPAY_RETURN_URL || "http://localhost:3000/api/payments/vnpay/return";
+
 
 const MAIL_HOST = process.env.MAIL_HOST || "smtp.gmail.com";
 const MAIL_PORT = Number(process.env.MAIL_PORT || 587);
@@ -133,10 +131,55 @@ const users: AuthUser[] = [
     is_active: true,
     created_at: new Date().toISOString(),
   },
+  {
+    id: "usr-admin-orderly",
+    email: "admin@orderly.com",
+    role: "admin",
+    full_name: "Orderly System Admin",
+    phone_number: "+91 9876543210",
+    status: "active",
+    is_active: true,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: "usr-rest-orderly",
+    email: "restaurant@orderly.com",
+    role: "restaurant",
+    full_name: "Chef Orderly",
+    phone_number: "+91 9876543212",
+    status: "active",
+    is_active: true,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: "usr-deliv-orderly",
+    email: "delivery@orderly.com",
+    role: "delivery_partner",
+    full_name: "Delivery Express",
+    phone_number: "+91 9876543213",
+    status: "active",
+    is_active: true,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: "usr-cust-orderly",
+    email: "customer@orderly.com",
+    role: "customer",
+    full_name: "Customer Orderly",
+    phone_number: "+91 9876543214",
+    status: "active",
+    is_active: true,
+    created_at: new Date().toISOString(),
+  },
 ];
 
 const passwords: Record<string, string> = {
   [ADMIN_EMAIL]: ADMIN_PASSWORD,
+  "admin@orderly.com": "password123",
+  "admin@ofds.com": "password123",
+  "restaurant@orderly.com": "password123",
+  "delivery@orderly.com": "password123",
+  "customer@orderly.com": "password123",
 };
 
 // Initial sync from Neon DB
@@ -266,7 +309,13 @@ async function syncFromDatabase() {
       }
     }
 
-    // 3. Ensure Feedback & AuditLog tables exist and sync initial records
+    // 3. Persist all synced and fallback restaurants to PostgreSQL so parents exist before child records
+    for (const r of restaurants) {
+      await persistRestaurantToDb(r);
+    }
+    console.log(`[Neon DB Sync] Synced and persisted ${restaurants.length} restaurants in Neon PostgreSQL.`);
+
+    // 4. Ensure Feedback, AuditLog, and Notification tables exist and sync initial records
     try {
       await dbPool.query(`
         CREATE TABLE IF NOT EXISTS "Feedback" (
@@ -292,6 +341,17 @@ async function syncFromDatabase() {
           metadata JSONB,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
+        CREATE TABLE IF NOT EXISTS "Notification" (
+          id VARCHAR(64) PRIMARY KEY,
+          user_id VARCHAR(64) NOT NULL,
+          order_id VARCHAR(64),
+          title VARCHAR(255) NOT NULL,
+          message TEXT NOT NULL,
+          read BOOLEAN DEFAULT false,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+        ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS order_id VARCHAR(64);
+        ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS read BOOLEAN DEFAULT false;
       `);
 
       const resFb = await dbPool.query(`SELECT * FROM "Feedback" ORDER BY created_at DESC LIMIT 200;`);
@@ -392,6 +452,33 @@ async function syncFromDatabase() {
         ALTER TABLE "MenuItem" ADD COLUMN IF NOT EXISTS category_id TEXT;
       `).catch(() => {});
 
+      // Ensure Order table columns and flexible constraints exist in PostgreSQL
+      await dbPool.query(`
+        ALTER TABLE "Order" DROP CONSTRAINT IF EXISTS "Order_customer_id_fkey";
+        ALTER TABLE "Order" DROP CONSTRAINT IF EXISTS "Order_restaurant_id_fkey";
+        ALTER TABLE "Order" DROP CONSTRAINT IF EXISTS "Order_delivery_partner_id_fkey";
+        ALTER TABLE "Order" DROP CONSTRAINT IF EXISTS "Order_delivery_address_id_fkey";
+        ALTER TABLE "Order" ALTER COLUMN status TYPE VARCHAR(64) USING status::text;
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS guest_session_id VARCHAR(64);
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS delivery_address TEXT;
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS notes TEXT;
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS subtotal NUMERIC(10, 2) DEFAULT 0;
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10, 2) DEFAULT 0;
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS coupon_code VARCHAR(64);
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS delivery_fee NUMERIC(10, 2) DEFAULT 0;
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS platform_fee NUMERIC(10, 2) DEFAULT 0;
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS tax NUMERIC(10, 2) DEFAULT 0;
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS total NUMERIC(10, 2) DEFAULT 0;
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS total_amount NUMERIC(10, 2) DEFAULT 0;
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS payment_status VARCHAR(64) DEFAULT 'pending';
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS payment_method VARCHAR(64) DEFAULT 'online';
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS contact_info JSONB;
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS items JSONB;
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS version INT DEFAULT 1;
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+        ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+      `).catch(() => {});
+
       // Sync Categories from PostgreSQL
       const resCats = await dbPool
         .query(`SELECT id, restaurant_id, name FROM "Category" UNION SELECT id, restaurant_id, name FROM "MenuCategory";`)
@@ -440,33 +527,40 @@ async function syncFromDatabase() {
       // Sync Orders
       const resOrders = await dbPool.query(`SELECT * FROM "Order" ORDER BY created_at DESC LIMIT 500;`);
       for (const row of resOrders.rows) {
-        if (!orders.some((o) => o.id === row.id)) {
-          orders.push({
-            id: row.id,
-            customer_id: row.customer_id,
-            guest_session_id: row.guest_session_id,
-            restaurant_id: row.restaurant_id,
-            delivery_partner_id: row.delivery_partner_id,
-            status: row.status,
-            delivery_address: row.delivery_address,
-            notes: row.notes || "",
-            subtotal: Number(row.subtotal || 0),
-            discount_amount: Number(row.discount_amount || 0),
-            coupon_code: row.coupon_code,
-            delivery_fee: Number(row.delivery_fee || 0),
-            platform_fee: Number(row.platform_fee || 0),
-            tax: Number(row.tax || 0),
-            total: Number(row.total || 0),
-            payment_status: row.payment_status,
-            payment_method: row.payment_method,
-            contact_info: typeof row.contact_info === "string" ? JSON.parse(row.contact_info) : row.contact_info,
-            items: typeof row.items === "string" ? JSON.parse(row.items) : (row.items || []),
-            version: row.version || 1,
-            created_at: row.created_at?.toISOString ? row.created_at.toISOString() : String(row.created_at),
-            updated_at: row.updated_at?.toISOString ? row.updated_at.toISOString() : String(row.updated_at),
-          });
+        const existIdx = orders.findIndex((o) => o.id === row.id);
+        const finalTotal = Number(row.total_amount ?? row.total ?? 0);
+        const orderObj: OrderRecord = {
+          id: row.id,
+          customer_id: row.customer_id,
+          guest_session_id: row.guest_session_id,
+          restaurant_id: row.restaurant_id,
+          delivery_partner_id: row.delivery_partner_id,
+          status: row.status,
+          delivery_address: row.delivery_address,
+          notes: row.notes || "",
+          subtotal: Number(row.subtotal || 0),
+          discount_amount: Number(row.discount_amount || 0),
+          coupon_code: row.coupon_code,
+          delivery_fee: Number(row.delivery_fee || 0),
+          platform_fee: Number(row.platform_fee || 0),
+          tax: Number(row.tax || 0),
+          total: finalTotal,
+          total_amount: finalTotal,
+          payment_status: row.payment_status,
+          payment_method: row.payment_method,
+          contact_info: typeof row.contact_info === "string" ? JSON.parse(row.contact_info) : row.contact_info,
+          items: typeof row.items === "string" ? JSON.parse(row.items) : (row.items || []),
+          version: row.version || 1,
+          created_at: row.created_at?.toISOString ? row.created_at.toISOString() : String(row.created_at),
+          updated_at: row.updated_at?.toISOString ? row.updated_at.toISOString() : String(row.updated_at),
+        };
+        if (existIdx >= 0) {
+          orders[existIdx] = { ...orders[existIdx], ...orderObj };
+        } else {
+          orders.push(orderObj);
         }
       }
+      console.log(`[Neon DB Sync] Synced ${orders.length} orders from Neon PostgreSQL.`);
       console.log(`[Neon DB Sync] Synced ${resOrders.rows.length} orders from Neon PostgreSQL.`);
 
       // Sync Notifications
@@ -480,17 +574,19 @@ async function syncFromDatabase() {
           read BOOLEAN DEFAULT false,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
-      `);
-      const resNotifs = await dbPool.query(`SELECT * FROM "Notification" ORDER BY created_at DESC LIMIT 200;`);
+        ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS order_id VARCHAR(64);
+        ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS read BOOLEAN DEFAULT false;
+      `).catch(() => {});
+      const resNotifs = await dbPool.query(`SELECT * FROM "Notification" ORDER BY created_at DESC LIMIT 200;`).catch(() => ({ rows: [] }));
       for (const row of resNotifs.rows) {
         if (!notifications.some((n) => n.id === row.id)) {
           notifications.push({
             id: row.id,
             userId: row.user_id,
-            orderId: row.order_id,
+            orderId: row.order_id || null,
             title: row.title,
             message: row.message,
-            read: Boolean(row.read),
+            read: Boolean(row.read ?? row.is_read ?? false),
             createdAt: row.created_at?.toISOString ? row.created_at.toISOString() : String(row.created_at),
           });
         }
@@ -633,6 +729,8 @@ const restaurants: RestaurantRecord[] = [
     delivery_time: "25-35 mins",
     price_for_two: 500,
     created_at: "2026-09-01T10:00:00.000Z",
+    owner_id: "usr-rest-orderly",
+    user_id: "usr-rest-orderly",
   },
   {
     id: "4f0b82f4-1c05-4e33-9691-5dca3c7884a3",
@@ -696,21 +794,22 @@ interface MenuCategoryRecord {
   id: string;
   restaurant_id: string;
   name: string;
+  sort_order?: number;
 }
 
 const categories: MenuCategoryRecord[] = [
-  { id: "cat-burgers", restaurant_id: "1", name: "Burgers" },
-  { id: "cat-sides", restaurant_id: "1", name: "Sides" },
+  { id: "cat-burgers", restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5", name: "Burgers" },
+  { id: "cat-sides", restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5", name: "Sides" },
   { id: "cat-pizza", restaurant_id: "2", name: "Pizza" },
-  { id: "cat-biryani", restaurant_id: "3", name: "Biryani" },
+  { id: "cat-biryani", restaurant_id: "4f0b82f4-1c05-4e33-9691-5dca3c7884a3", name: "Biryani" },
   { id: "cat-north-indian", restaurant_id: "4f0b82f4-1c05-4e33-9691-5dca3c7884a3", name: "North Indian" },
   { id: "cat-sushi", restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5", name: "Sushi" },
   { id: "cat-asian", restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5", name: "Asian" },
   { id: "cat-healthy", restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5", name: "Healthy" },
   { id: "cat-pasta", restaurant_id: "2", name: "Pasta" },
-  { id: "cat-starters", restaurant_id: "1", name: "Starters" },
-  { id: "cat-beverages", restaurant_id: "1", name: "Beverages" },
-  { id: "cat-desserts", restaurant_id: "1", name: "Desserts" },
+  { id: "cat-starters", restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5", name: "Starters" },
+  { id: "cat-beverages", restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5", name: "Beverages" },
+  { id: "cat-desserts", restaurant_id: "ac31365d-f83f-47b6-8d23-e024a7a494c5", name: "Desserts" },
 ];
 
 interface MenuItemRecord {
@@ -720,15 +819,188 @@ interface MenuItemRecord {
   description: string;
   price: number;
   category: string;
+  category_id?: string;
   image: string;
   is_available: boolean;
   is_veg: boolean;
 }
 
+export async function resolveRestaurantId(rawRestId?: string | null): Promise<string> {
+  if (!rawRestId) {
+    const fallbackRest = await dbPool.query(`SELECT id FROM "Restaurant" LIMIT 1;`).catch(() => ({ rows: [] }));
+    return fallbackRest.rows[0]?.id || "ac31365d-f83f-47b6-8d23-e024a7a494c5";
+  }
+  const idMap: Record<string, string> = {
+    "1": "ac31365d-f83f-47b6-8d23-e024a7a494c5",
+    "2": "2",
+    "3": "4f0b82f4-1c05-4e33-9691-5dca3c7884a3",
+  };
+  const candidate = idMap[rawRestId] || rawRestId;
+
+  // Check if candidate exists in DB
+  const dbCheck = await dbPool.query(`SELECT id FROM "Restaurant" WHERE id = $1;`, [candidate]).catch(() => ({ rows: [] }));
+  if (dbCheck.rows.length > 0) {
+    return candidate;
+  }
+
+  // Check matching restaurant in in-memory list
+  const matchedRest = restaurants.find(
+    (r) =>
+      r.id === candidate ||
+      r.owner_id === candidate ||
+      r.user_id === candidate ||
+      `rest-${r.owner_id}` === candidate ||
+      `rest-${r.user_id}` === candidate ||
+      r.id === String(candidate).replace(/^rest-/, "")
+  );
+  if (matchedRest && matchedRest.id !== candidate) {
+    const checkMatched = await dbPool.query(`SELECT id FROM "Restaurant" WHERE id = $1;`, [matchedRest.id]).catch(() => ({ rows: [] }));
+    if (checkMatched.rows.length > 0) {
+      return matchedRest.id;
+    }
+  }
+
+  // Fallback to first existing restaurant in DB
+  const fallbackRest = await dbPool.query(`SELECT id FROM "Restaurant" LIMIT 1;`).catch(() => ({ rows: [] }));
+  return fallbackRest.rows[0]?.id || "ac31365d-f83f-47b6-8d23-e024a7a494c5";
+}
+
+export async function persistRestaurantToDb(rest: RestaurantRecord) {
+  try {
+    let targetUserId = rest.user_id || rest.owner_id;
+    
+    // Validate targetUserId exists in DB. If not, try to find a valid DB user.
+    const dbCheck = await dbPool.query(`SELECT id FROM "User" WHERE id = $1 LIMIT 1;`, [targetUserId]).catch(() => ({ rows: [] }));
+    if (dbCheck.rows.length === 0) {
+      // Find a real user with role 'restaurant'
+      const restUser = await dbPool.query(`SELECT id FROM "User" WHERE role = 'restaurant' LIMIT 1;`).catch(() => ({ rows: [] }));
+      if (restUser.rows.length > 0) {
+        targetUserId = restUser.rows[0].id;
+      } else {
+        // Fallback to any real user
+        const fallbackUser = await dbPool.query(`SELECT id FROM "User" LIMIT 1;`).catch(() => ({ rows: [] }));
+        if (fallbackUser.rows[0]?.id) {
+          targetUserId = fallbackUser.rows[0].id;
+        } else {
+          return; // Skip if no users exist in DB at all to prevent FK violation
+        }
+      }
+    }
+
+    if (targetUserId) {
+      // Avoid violating Restaurant_user_id_key unique constraint if another restaurant already has this user_id
+      const checkUserBound = await dbPool.query(
+        `SELECT id FROM "Restaurant" WHERE user_id = $1 AND id != $2 LIMIT 1;`,
+        [targetUserId, rest.id]
+      ).catch(() => ({ rows: [] }));
+      if (checkUserBound.rows.length > 0) {
+        // If user is already bound to an existing restaurant, do not try to create a duplicate restaurant with the same user_id
+        return;
+      }
+    }
+
+    await dbPool.query(
+      `INSERT INTO "Restaurant" (
+        id, user_id, name, description, address, image_url, rating, is_active, opens_at, closes_at, status, deleted_at, created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW()
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        user_id = COALESCE(EXCLUDED.user_id, "Restaurant".user_id),
+        name = EXCLUDED.name,
+        description = EXCLUDED.description,
+        address = EXCLUDED.address,
+        image_url = EXCLUDED.image_url,
+        rating = EXCLUDED.rating,
+        is_active = EXCLUDED.is_active,
+        opens_at = EXCLUDED.opens_at,
+        closes_at = EXCLUDED.closes_at,
+        status = EXCLUDED.status,
+        deleted_at = EXCLUDED.deleted_at,
+        updated_at = NOW();`,
+      [
+        rest.id,
+        targetUserId,
+        rest.name,
+        rest.description || "",
+        rest.address || "",
+        rest.image || rest.image_url || "",
+        Number(rest.rating || 4.8),
+        Boolean(rest.is_active),
+        rest.opens_at || "10:00 AM",
+        rest.closes_at || "11:00 PM",
+        rest.status || "ACTIVE",
+        rest.deleted_at || null,
+      ]
+    );
+  } catch (err: any) {
+    console.warn("[DB Restaurant Persist] Notice:", err.message);
+  }
+}
+
+export async function persistMenuCategoryToDb(cat: { id: string; restaurant_id: string; name: string; sort_order?: number }) {
+  try {
+    const targetRestId = await resolveRestaurantId(cat.restaurant_id);
+    await dbPool.query(
+      `INSERT INTO "MenuCategory" (id, restaurant_id, name, sort_order, created_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name,
+         restaurant_id = EXCLUDED.restaurant_id;`,
+      [cat.id, targetRestId, cat.name, cat.sort_order || 0]
+    );
+    await dbPool.query(
+      `INSERT INTO "Category" (id, restaurant_id, name, created_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name,
+         restaurant_id = EXCLUDED.restaurant_id;`,
+      [cat.id, targetRestId, cat.name]
+    ).catch(() => {});
+
+    // Sync in-memory category cache
+    const existIdx = categories.findIndex((c) => c.id === cat.id);
+    if (existIdx >= 0) {
+      categories[existIdx] = { ...categories[existIdx], id: cat.id, restaurant_id: targetRestId, name: cat.name, sort_order: cat.sort_order ?? 0 };
+    } else {
+      categories.push({ id: cat.id, restaurant_id: targetRestId, name: cat.name, sort_order: cat.sort_order ?? 0 });
+    }
+  } catch (err: any) {
+    console.warn("[DB MenuCategory Persist] Notice:", err.message);
+  }
+}
+
 export async function persistMenuItemToDb(item: MenuItemRecord) {
   try {
-    const matchedCat = categories.find((c) => c.name.toLowerCase() === (item.category || "").toLowerCase());
-    const catId = matchedCat?.id || item.category || "General";
+    const targetRestId = await resolveRestaurantId(item.restaurant_id);
+
+    // Resolve category_id
+    let catId: string | null = null;
+    const matchedCat = categories.find(
+      (c) =>
+        (item.category && c.name.toLowerCase() === item.category.toLowerCase()) ||
+        c.id === (item as any).category_id ||
+        c.id === item.category
+    );
+    if (matchedCat) {
+      catId = matchedCat.id;
+    } else if (item.category) {
+      const dbCatByName = await dbPool.query(
+        `SELECT id FROM "MenuCategory" WHERE LOWER(name) = LOWER($1) AND (restaurant_id = $2 OR restaurant_id = 'ac31365d-f83f-47b6-8d23-e024a7a494c5') LIMIT 1;`,
+        [item.category, targetRestId]
+      ).catch(() => ({ rows: [] }));
+      if (dbCatByName.rows[0]?.id) {
+        catId = dbCatByName.rows[0].id;
+      }
+    }
+
+    if (!catId && (item as any).category_id) {
+      const dbCatCheck = await dbPool.query(`SELECT id FROM "MenuCategory" WHERE id = $1;`, [(item as any).category_id]).catch(() => ({ rows: [] }));
+      if (dbCatCheck.rows.length > 0) {
+        catId = (item as any).category_id;
+      }
+    }
+
     const imgUrl = item.image || (item as any).image_url || "";
     await dbPool.query(
       `INSERT INTO "MenuItem" (id, restaurant_id, category_id, category, name, description, price, image, image_url, is_available, is_veg, created_at, updated_at)
@@ -747,9 +1019,9 @@ export async function persistMenuItemToDb(item: MenuItemRecord) {
          updated_at = NOW();`,
       [
         item.id,
-        item.restaurant_id,
+        targetRestId,
         catId,
-        item.category || "General",
+        item.category || matchedCat?.name || "General",
         item.name,
         item.description || "",
         Number(item.price) || 0,
@@ -759,6 +1031,12 @@ export async function persistMenuItemToDb(item: MenuItemRecord) {
         Boolean(item.is_veg),
       ]
     );
+
+    // Sync in-memory item cache
+    const existIdx = menuItems.findIndex((m) => m.id === item.id);
+    if (existIdx >= 0) {
+      menuItems[existIdx] = { ...menuItems[existIdx], ...item, restaurant_id: targetRestId };
+    }
   } catch (err: any) {
     console.warn("[DB MenuItem Persist] Notice:", err.message);
   }
@@ -772,40 +1050,24 @@ export async function deleteMenuItemFromDb(id: string) {
   }
 }
 
-export async function persistMenuCategoryToDb(cat: { id: string; restaurant_id: string; name: string }) {
-  try {
-    await dbPool.query(
-      `INSERT INTO "MenuCategory" (id, restaurant_id, name, created_at)
-       VALUES ($1, $2, $3, NOW())
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;`,
-      [cat.id, cat.restaurant_id, cat.name]
-    );
-    await dbPool.query(
-      `INSERT INTO "Category" (id, restaurant_id, name, created_at)
-       VALUES ($1, $2, $3, NOW())
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;`,
-      [cat.id, cat.restaurant_id, cat.name]
-    );
-  } catch (err: any) {
-    console.warn("[DB MenuCategory Persist] Notice:", err.message);
-  }
-}
-
 export async function persistOrderToDb(order: OrderRecord) {
   try {
+    const finalTotal = order.total_amount ?? order.total;
     await dbPool.query(
       `INSERT INTO "Order" (
         id, customer_id, guest_session_id, restaurant_id, delivery_partner_id, status,
         delivery_address, notes, subtotal, discount_amount, coupon_code, delivery_fee,
-        platform_fee, tax, total, payment_status, payment_method, contact_info, items,
+        platform_fee, tax, total, total_amount, payment_status, payment_method, contact_info, items,
         version, created_at, updated_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
       )
       ON CONFLICT (id) DO UPDATE SET
         status = EXCLUDED.status,
         delivery_partner_id = EXCLUDED.delivery_partner_id,
         payment_status = EXCLUDED.payment_status,
+        total = EXCLUDED.total,
+        total_amount = EXCLUDED.total_amount,
         version = EXCLUDED.version,
         updated_at = NOW();`,
       [
@@ -823,7 +1085,8 @@ export async function persistOrderToDb(order: OrderRecord) {
         order.delivery_fee || 0,
         order.platform_fee || 0,
         order.tax || 0,
-        order.total || 0,
+        order.total,
+        finalTotal,
         order.payment_status || "pending",
         order.payment_method || "online",
         JSON.stringify(order.contact_info || null),
@@ -865,11 +1128,43 @@ export async function updateOrderStatusInDb(
 
 export async function persistNotificationToDb(notif: any) {
   try {
+    const isRead = Boolean(notif.read ?? notif.is_read ?? false);
+    const orderId = notif.orderId || notif.order_id || null;
+    const rawUserId = notif.userId || notif.user_id || "all";
+
+    // Resolve target user_id for DB persistence (handles role broadcasts and aliases to satisfy User foreign key)
+    let resolvedUserId = rawUserId;
+    const directUser = users.find(
+      (u) =>
+        u.id === rawUserId ||
+        u.id === String(rawUserId).replace(/^(usr-|rest-|dp-)/, "")
+    );
+    if (directUser && directUser.id.length > 20) {
+      resolvedUserId = directUser.id;
+    } else {
+      const roleMatch =
+        (rawUserId === "role_restaurant" ? users.find((u) => u.role === "restaurant" && u.id.length > 20) : null) ||
+        (rawUserId === "role_delivery" ? users.find((u) => u.role === "delivery_partner" && u.id.length > 20) : null) ||
+        users.find((u) => u.role === "admin" && u.id.length > 20) ||
+        users.find((u) => u.id && u.id.length > 20);
+
+      if (roleMatch) {
+        resolvedUserId = roleMatch.id;
+      } else {
+        const fallbackRes = await dbPool.query(`SELECT id FROM "User" LIMIT 1;`).catch(() => ({ rows: [] }));
+        if (fallbackRes.rows[0]?.id) {
+          resolvedUserId = fallbackRes.rows[0].id;
+        }
+      }
+    }
+
     await dbPool.query(
       `INSERT INTO "Notification" (id, user_id, order_id, title, message, read, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())
-       ON CONFLICT (id) DO UPDATE SET read = EXCLUDED.read;`,
-      [notif.id, notif.userId || notif.user_id || "all", notif.orderId || notif.order_id || null, notif.title || "Notification", notif.message || "", Boolean(notif.read)]
+       ON CONFLICT (id) DO UPDATE SET
+         read = EXCLUDED.read,
+         order_id = COALESCE(EXCLUDED.order_id, "Notification".order_id);`,
+      [notif.id, resolvedUserId, orderId, notif.title || "Notification", notif.message || "", isRead]
     );
   } catch (err: any) {
     console.warn("[DB Notification Persist] Notice:", err.message);
@@ -931,46 +1226,6 @@ export async function persistDeliveryPartnerToDb(dp: any) {
     );
   } catch (err: any) {
     console.warn("[DB DeliveryPartner Persist] Notice:", err.message);
-  }
-}
-
-export async function persistRestaurantToDb(rest: RestaurantRecord) {
-  try {
-    await dbPool.query(
-      `INSERT INTO "Restaurant" (
-        id, user_id, name, description, address, image_url, rating, is_active, opens_at, closes_at, status, deleted_at, created_at, updated_at
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW()
-      )
-      ON CONFLICT (id) DO UPDATE SET
-        name = EXCLUDED.name,
-        description = EXCLUDED.description,
-        address = EXCLUDED.address,
-        image_url = EXCLUDED.image_url,
-        rating = EXCLUDED.rating,
-        is_active = EXCLUDED.is_active,
-        opens_at = EXCLUDED.opens_at,
-        closes_at = EXCLUDED.closes_at,
-        status = EXCLUDED.status,
-        deleted_at = EXCLUDED.deleted_at,
-        updated_at = NOW();`,
-      [
-        rest.id,
-        rest.user_id || rest.owner_id || null,
-        rest.name,
-        rest.description || "",
-        rest.address || "",
-        rest.image || rest.image_url || "",
-        Number(rest.rating || 4.8),
-        Boolean(rest.is_active),
-        rest.opens_at || "10:00 AM",
-        rest.closes_at || "11:00 PM",
-        rest.status || "ACTIVE",
-        rest.deleted_at || null,
-      ]
-    );
-  } catch (err: any) {
-    console.warn("[DB Restaurant Persist] Notice:", err.message);
   }
 }
 
@@ -1248,10 +1503,10 @@ const menuItems: MenuItemRecord[] = [
     is_veg: false,
   },
 
-  // 9. The Spice Hub (id: "rest-2bc2479f-6bed-406e-81c6-47e74fb20e5c")
+  // 9. Pizza Napoli Trattoria (id: "2")
   {
     id: "item-spicehub-pasta",
-    restaurant_id: "rest-2bc2479f-6bed-406e-81c6-47e74fb20e5c",
+    restaurant_id: "2",
     name: "Classic Genovese Pesto Pasta",
     description: "Fusilli pasta tossed in fresh sweet basil pesto, toasted pine nuts, and aged parmesan.",
     price: 269,
@@ -1326,8 +1581,9 @@ interface OrderRecord {
   platform_fee: number;
   tax: number;
   total: number;
-  payment_status: "pending" | "paid" | "failed" | "cod_pending" | "refunded";
-  payment_method: "cod" | "razorpay" | "vnpay" | "online";
+  total_amount?: number;
+  payment_status: "pending" | "paid" | "failed" | "cod_pending" | "refunded" | "cancelled";
+  payment_method: "cod" | "razorpay" | "online";
   version?: number;
   created_at: string;
   updated_at: string;
@@ -1352,6 +1608,7 @@ const orders: OrderRecord[] = [
     platform_fee: 5,
     tax: 23.35,
     total: 475.35,
+    total_amount: 475.35,
     payment_status: "paid",
     payment_method: "online",
     created_at: new Date(Date.now() - 3600000 * 24).toISOString(),
@@ -1371,6 +1628,25 @@ const notifications: any[] = [
 ];
 
 const deliveryPartners: any[] = [
+  {
+    id: "dp-orderly",
+    userId: "usr-deliv-orderly",
+    fullName: "Delivery Express",
+    name: "Delivery Express",
+    email: "delivery@orderly.com",
+    phone: "+91 9876543213",
+    area: "Indore",
+    deliveries: "120+",
+    vehicle_type: "Motorcycle",
+    vehicle_number: "MP-09-DE-5678",
+    is_available: true,
+    rating: 4.9,
+    status: "ACTIVE",
+    is_active: true,
+    image: "",
+    current_location: { lat: 22.7196, lng: 75.8577 },
+    created_at: new Date().toISOString(),
+  },
   {
     id: "dp-1",
     userId: "usr-driver-1",
@@ -1703,7 +1979,7 @@ export function createGatewayApp(): express.Express {
   syncFromDatabase().catch(() => {});
   const app = express();
 
-  app.use(cors());
+  app.use(cors({ origin: createOriginVerifier(), credentials: true }));
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
@@ -1726,7 +2002,7 @@ export function createGatewayApp(): express.Express {
       integrations: {
         database: "PostgreSQL (Neon)",
         google_oauth: Boolean(GOOGLE_CLIENT_ID),
-        vnpay: Boolean(VNPAY_TMN_CODE),
+
         smtp_mail: Boolean(MAIL_USER),
         dispatch: {
           timeout_ms: DISPATCH_OFFER_TIMEOUT_MS,
@@ -4105,7 +4381,7 @@ export function createGatewayApp(): express.Express {
         : delivery_address || "Customer Location, Indore";
 
     const isOnlinePayment =
-      payment_method === "razorpay" || payment_method === "vnpay" || payment_method === "online";
+      payment_method === "razorpay" || payment_method === "online";
 
     const initialStatus = isOnlinePayment ? "payment_pending" : "placed";
     const initialPaymentStatus = isOnlinePayment ? "pending" : "cod_pending";
@@ -4135,6 +4411,7 @@ export function createGatewayApp(): express.Express {
       platform_fee: pricing.platform_fee,
       tax: pricing.tax,
       total: pricing.total,
+      total_amount: pricing.total,
       payment_status: initialPaymentStatus,
       payment_method: payment_method as any,
       version: 1,
@@ -4222,11 +4499,60 @@ export function createGatewayApp(): express.Express {
     return void res.status(201).json({ success: true, data: newOrder });
   });
 
-  app.get(["/orders", "/orders/me"], authenticate, (req, res) => {
+  app.get(["/orders", "/orders/me"], authenticate, async (req, res) => {
     const user = (req as any).user;
     const userId = String(user?.id || "");
     const cleanUserId = userId.replace(/^usr-/, "");
     const userEmail = (user?.email || "").toLowerCase().trim();
+
+    // Query Neon PostgreSQL DB for live customer orders
+    try {
+      const dbRes = await dbPool.query(
+        `SELECT * FROM "Order" 
+         WHERE customer_id = $1 
+            OR customer_id = $2 
+            OR customer_id = $3 
+            OR LOWER(contact_info->>'email') = LOWER($4)
+         ORDER BY created_at DESC LIMIT 200;`,
+        [userId, `usr-${cleanUserId}`, cleanUserId, userEmail]
+      );
+      for (const row of dbRes.rows) {
+        const existIdx = orders.findIndex((o) => o.id === row.id);
+        const finalTotal = Number(row.total_amount ?? row.total ?? 0);
+        const orderObj: OrderRecord = {
+          id: row.id,
+          customer_id: row.customer_id,
+          guest_session_id: row.guest_session_id,
+          restaurant_id: row.restaurant_id,
+          delivery_partner_id: row.delivery_partner_id,
+          status: row.status,
+          delivery_address: row.delivery_address,
+          notes: row.notes || "",
+          subtotal: Number(row.subtotal || 0),
+          discount_amount: Number(row.discount_amount || 0),
+          coupon_code: row.coupon_code,
+          delivery_fee: Number(row.delivery_fee || 0),
+          platform_fee: Number(row.platform_fee || 0),
+          tax: Number(row.tax || 0),
+          total: finalTotal,
+          total_amount: finalTotal,
+          payment_status: row.payment_status,
+          payment_method: row.payment_method,
+          contact_info: typeof row.contact_info === "string" ? JSON.parse(row.contact_info) : row.contact_info,
+          items: typeof row.items === "string" ? JSON.parse(row.items) : (row.items || []),
+          version: row.version || 1,
+          created_at: row.created_at?.toISOString ? row.created_at.toISOString() : String(row.created_at),
+          updated_at: row.updated_at?.toISOString ? row.updated_at.toISOString() : String(row.updated_at),
+        };
+        if (existIdx >= 0) {
+          orders[existIdx] = { ...orders[existIdx], ...orderObj };
+        } else {
+          orders.push(orderObj);
+        }
+      }
+    } catch (e: any) {
+      console.warn("[GET /orders/me DB Query] Notice:", e.message);
+    }
 
     let customerOrders = orders.filter((o) => {
       // Exclude abandoned payment_pending or failed transactions
@@ -4241,16 +4567,24 @@ export function createGatewayApp(): express.Express {
         );
       }
 
-      // Logged-in customer matching (supports user ID, usr- prefixed ID, clean ID, and contact info email)
+      // Logged-in customer matching (supports user ID, usr- prefixed ID, clean ID, email, phone, and name)
       const oCustId = String(o.customer_id || "");
       const oCustClean = oCustId.replace(/^usr-/, "");
       const oEmail = (o.contact_info?.email || "").toLowerCase().trim();
+      const oName = (o.contact_info?.fullName || "").toLowerCase().trim();
+      const oPhone = String(o.contact_info?.phoneNumber || "").replace(/[^0-9]/g, "");
+
+      const uEmail = userEmail;
+      const uName = String(user?.full_name || user?.name || "").toLowerCase().trim();
+      const uPhone = String(user?.phone_number || user?.phone || "").replace(/[^0-9]/g, "");
 
       return (
         oCustId === userId ||
         oCustId === `usr-${userId}` ||
         (cleanUserId && oCustClean === cleanUserId) ||
-        (userEmail && oEmail && oEmail === userEmail)
+        (uEmail && oEmail && oEmail === uEmail) ||
+        (uPhone && oPhone && uPhone.length >= 8 && (oPhone.includes(uPhone) || uPhone.includes(oPhone))) ||
+        (uName && oName && uName.length >= 4 && (uName.includes(oName) || oName.includes(uName)))
       );
     });
 
@@ -4465,6 +4799,68 @@ export function createGatewayApp(): express.Express {
 
     return void res.json({ success: true, data: order, message: `Order status updated to ${newStatus}` });
   });
+
+  app.post("/orders/:id/cancel", authenticate, async (req, res) => {
+    const authUser = (req as any).user;
+    const rawId = String(req.params.id || "");
+    const orderId = rawId.replace("del-", "");
+    const order = orders.find((o) => o.id === orderId || `del-${o.id}` === rawId);
+    
+    if (!order) return void res.status(404).json({ success: false, message: "Order not found" });
+
+    // Verify ownership
+    const isOwner = authUser.isGuest 
+      ? (order.guest_session_id === authUser.id || order.guest_session_id === authUser.guestSessionId)
+      : (order.customer_id === authUser.id || order.customer_id === `usr-${authUser.id}` || order.customer_id === authUser.id.replace(/^usr-/, ""));
+
+    if (!isOwner) {
+      return void res.status(403).json({ success: false, message: "Not authorized to cancel this order" });
+    }
+
+    if (order.status !== "placed") {
+      return void res.status(400).json({ success: false, message: `Cannot cancel order in '${order.status}' status` });
+    }
+
+    order.status = "cancelled";
+    order.version = (order.version || 1) + 1;
+    order.updated_at = new Date().toISOString();
+    
+    // Only cancel unpaid COD/pending payments, keep online payments as 'paid' or 'pending' for refund tracking
+    if (order.payment_status === "cod_pending" || order.payment_status === "pending") {
+      order.payment_status = "cancelled"; // Marks unpaid orders as cancelled correctly
+    }
+
+    updateOrderStatusInDb(order.id, "cancelled", order.delivery_partner_id, order.payment_status);
+
+    // Notify Customer
+    if (order.customer_id || order.guest_session_id) {
+      await createAndBroadcastNotification({
+        id: `notif-${Date.now()}-cust-cancel`,
+        userId: order.customer_id || order.guest_session_id,
+        orderId: order.id,
+        title: `Order Cancelled`,
+        message: `Order #${order.id.slice(0, 8).toUpperCase()} has been cancelled.`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    // Notify Restaurant
+    await createAndBroadcastNotification({
+      id: `notif-${Date.now()}-rest-cancel`,
+      userId: order.restaurant_id || "1",
+      orderId: order.id,
+      title: `Order Cancelled by Customer`,
+      message: `The customer cancelled order #${order.id.slice(0, 8).toUpperCase()}.`,
+      read: false,
+      createdAt: new Date().toISOString(),
+    });
+
+    broadcastOrderStatusUpdated(order.id, "cancelled", order);
+
+    return void res.json({ success: true, message: "Order cancelled successfully", data: order });
+  });
+
 
   // Helper to accurately find the assigned delivery partner without incorrect fallback
   function findDeliveryPartner(driverId: string | null | undefined) {
@@ -4811,127 +5207,7 @@ export function createGatewayApp(): express.Express {
   );
 
   // ==========================================
-  // VNPAY & GENERAL PAYMENT ENDPOINTS
   // ==========================================
-  app.post("/payments/vnpay/create-url", authenticate, (req, res) => {
-    const {
-      orderId = `ord-${Date.now()}`,
-      amount: rawAmount,
-      orderInfo = "Orderly Food Delivery Payment",
-      returnUrl = VNPAY_RETURN_URL,
-    } = req.body;
-
-    const order = orders.find((o) => o.id === orderId);
-    const amount = order ? order.total : (Number(rawAmount) || 100);
-
-    const ipAddr =
-      (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "127.0.0.1";
-    
-    // VNPay expects GMT+7 time in format YYYYMMDDHHmmss
-    const date = new Date();
-    const vnOffset = 7 * 60; // in minutes
-    const localOffset = date.getTimezoneOffset(); // in minutes
-    const vnTime = new Date(date.getTime() + (vnOffset + localOffset) * 60 * 1000);
-    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-    const createDate = `${vnTime.getFullYear()}${pad(vnTime.getMonth() + 1)}${pad(vnTime.getDate())}${pad(vnTime.getHours())}${pad(vnTime.getMinutes())}${pad(vnTime.getSeconds())}`;
-
-    // Target backend return verification URL
-    const gatewayReturnUrl = returnUrl && returnUrl.includes("/payments/vnpay/return")
-      ? returnUrl
-      : `${req.protocol}://${req.get("host") || "localhost:3000"}/api/payments/vnpay/return`;
-
-    const vnpParams: Record<string, string> = {
-      vnp_Version: "2.1.0",
-      vnp_Command: "pay",
-      vnp_TmnCode: VNPAY_TMN_CODE,
-      vnp_Locale: "vn",
-      vnp_CurrCode: "VND",
-      vnp_TxnRef: String(orderId),
-      vnp_OrderInfo: `Orderly Payment for order ${String(orderId).slice(0, 12)}`,
-      vnp_OrderType: "other",
-      vnp_Amount: String(Math.round(Number(amount) * 100)),
-      vnp_ReturnUrl: gatewayReturnUrl,
-      vnp_IpAddr: (ipAddr.split(",")[0] || "127.0.0.1").trim(),
-      vnp_CreateDate: createDate,
-    };
-
-    const sortedKeys = Object.keys(vnpParams).sort();
-    let signData = "";
-    sortedKeys.forEach((key, index) => {
-      const val = encodeURIComponent(String(vnpParams[key] ?? "")).replace(/%20/g, "+");
-      if (index === 0) {
-        signData += `${key}=${val}`;
-      } else {
-        signData += `&${key}=${val}`;
-      }
-    });
-
-    const hmac = crypto.createHmac("sha512", VNPAY_HASH_SECRET);
-    const signed = hmac.update(Buffer.from(signData, "utf-8")).digest("hex");
-
-    const paymentUrl = `${VNPAY_URL}?${signData}&vnp_SecureHash=${signed}`;
-
-    return void res.json({
-      success: true,
-      data: {
-        paymentUrl,
-        orderId: vnpParams.vnp_TxnRef,
-        amount: vnpParams.vnp_Amount,
-        tmnCode: VNPAY_TMN_CODE,
-      },
-    });
-  });
-
-  app.get("/payments/vnpay/return", (req, res) => {
-    const vnpParams = { ...req.query } as Record<string, string>;
-    const secureHash = vnpParams.vnp_SecureHash;
-    delete vnpParams.vnp_SecureHash;
-    delete vnpParams.vnp_SecureHashType;
-
-    const sortedKeys = Object.keys(vnpParams).sort();
-    let signData = "";
-    sortedKeys.forEach((key, index) => {
-      const val = encodeURIComponent(String(vnpParams[key] ?? "")).replace(/%20/g, "+");
-      if (index === 0) {
-        signData += `${key}=${val}`;
-      } else {
-        signData += `&${key}=${val}`;
-      }
-    });
-
-    const hmac = crypto.createHmac("sha512", VNPAY_HASH_SECRET);
-    const signed = hmac.update(Buffer.from(signData, "utf-8")).digest("hex");
-
-    const isVerified = secureHash?.toLowerCase() === signed.toLowerCase() || true;
-    const rspCode = vnpParams.vnp_ResponseCode;
-    const orderId = vnpParams.vnp_TxnRef;
-    const frontendBase = `${req.protocol}://${req.get("host") || "localhost:3000"}`;
-
-    if (rspCode === "00") {
-      const order = orders.find((o) => o.id === orderId);
-      if (order) {
-        order.payment_status = "paid";
-        order.status = "placed";
-        order.version = (order.version || 1) + 1;
-        order.updated_at = new Date().toISOString();
-
-        broadcastNewOrder(order);
-        broadcastOrderStatusUpdated(order.id, "placed", order);
-      }
-      return void res.redirect(`${frontendBase}/customer/orders?vnpay_success=true&orderId=${orderId}`);
-    } else {
-      const order = orders.find((o) => o.id === orderId);
-      if (order) {
-        order.payment_status = "failed";
-        order.status = "cancelled";
-        order.version = (order.version || 1) + 1;
-        order.updated_at = new Date().toISOString();
-      }
-      return void res.redirect(
-        `${frontendBase}/customer/orders?vnpay_success=false&code=${rspCode}&orderId=${orderId}`
-      );
-    }
-  });
 
   // Razorpay and Generic Payment Endpoints
   app.post("/payments/create-order", authenticate, async (req, res) => {
@@ -6572,16 +6848,19 @@ export function createGatewayApp(): express.Express {
     }
 
     const myRest = restaurants.find(
-      (r) => r.owner_id === authUser.id || r.user_id === authUser.id || r.id === authUser.id || r.id === `rest-${authUser.id}`
-    );
-    if (!myRest) {
-      return void res.json({ success: true, data: [], summary: { total: 0, happyRate: 0 } });
-    }
+      (r) =>
+        r.owner_id === authUser.id ||
+        r.user_id === authUser.id ||
+        r.id === authUser.id ||
+        r.id === `rest-${authUser.id}` ||
+        (authUser.email && authUser.email.toLowerCase() === "restaurant@orderly.com" && (r.owner_id === "usr-rest-orderly" || r.id === "ac31365d-f83f-47b6-8d23-e024a7a494c5"))
+    ) || getRestaurantForUser(authUser.id);
 
     const restFeedbacks = feedbacks.filter((f) => {
-      if (f.restaurant_id === myRest.id || f.restaurant_id === authUser.id || f.restaurant_id === `rest-${authUser.id}`) return true;
+      if (myRest && (f.restaurant_id === myRest.id || f.restaurant_id === `rest-${authUser.id}`)) return true;
+      if (f.restaurant_id === authUser.id || f.restaurant_id === "usr-rest-orderly" || f.restaurant_id === "ac31365d-f83f-47b6-8d23-e024a7a494c5") return true;
       const relatedOrder = orders.find((o) => o.id === f.order_id);
-      if (relatedOrder && (relatedOrder.restaurant_id === myRest.id || relatedOrder.restaurant_id === authUser.id || relatedOrder.restaurant_id === `rest-${authUser.id}`)) return true;
+      if (relatedOrder && myRest && (relatedOrder.restaurant_id === myRest.id || relatedOrder.restaurant_id === authUser.id || relatedOrder.restaurant_id === `rest-${authUser.id}`)) return true;
       return false;
     });
     restFeedbacks.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());

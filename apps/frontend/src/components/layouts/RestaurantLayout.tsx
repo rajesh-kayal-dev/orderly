@@ -148,7 +148,7 @@ export default function RestaurantLayout() {
         };
         setNotificationsList(prev => [newNotif, ...prev.filter(n => n.id !== newNotif.id)]);
         notification.info({
-          message: newNotif.title,
+          title: newNotif.title,
           description: newNotif.message || 'You have a new update.',
           placement: 'topRight',
           duration: 4.5,
@@ -172,7 +172,7 @@ export default function RestaurantLayout() {
           token
         }));
         notification.success({
-          message: 'Restaurant Approved! 🎉',
+          title: 'Restaurant Approved! 🎉',
           description: 'Your restaurant has been approved by admin and is now live!',
           placement: 'topRight',
           duration: 6,
@@ -192,7 +192,7 @@ export default function RestaurantLayout() {
         };
         setNotificationsList(prev => [newNotif, ...prev]);
         notification.success({
-          message: `New Order Received! #${orderNum}`,
+          title: `New Order Received! #${orderNum}`,
           description: `Total: ₹${data?.total || 0}. Click notifications to view order details.`,
           placement: 'topRight',
           duration: 5,
@@ -212,7 +212,7 @@ export default function RestaurantLayout() {
         };
         setNotificationsList(prev => [newNotif, ...prev]);
         notification.info({
-          message: `Order #${orderNum} Status Updated`,
+          title: `Order #${orderNum} Status Updated`,
           description: `Status changed to ${data?.status ? data.status.replace(/_/g, ' ') : 'updated'}.`,
           placement: 'topRight',
           duration: 4,
@@ -271,7 +271,7 @@ export default function RestaurantLayout() {
         }
 
         notification.success({
-          message: 'Restaurant Status Updated',
+          title: 'Restaurant Status Updated',
           description: newStatus ? 'Your restaurant is now OPEN for orders.' : 'Your restaurant is now CLOSED for orders.',
           placement: 'topRight'
         });
@@ -279,7 +279,7 @@ export default function RestaurantLayout() {
     } catch (error: any) {
       console.error('Error updating status:', error);
       notification.error({
-        message: 'Status Update Failed',
+        title: 'Status Update Failed',
         description: error.response?.data?.message || 'Failed to update restaurant status.',
         placement: 'topRight'
       });
