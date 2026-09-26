@@ -4,6 +4,10 @@
 # - Frontend is deployed separately to Vercel (NOT part of this Blueprint).
 # - PostgreSQL is external (Neon) via DATABASE_URL — not deployed here.
 # - Kafka is external (managed broker) via KAFKA_BROKERS — not deployed here.
+#   Managed brokers that require transport security and authentication also need
+#   KAFKA_SSL, KAFKA_SASL_USERNAME, KAFKA_SASL_PASSWORD and KAFKA_SASL_MECHANISM.
+#   All of these are `sync: false` so Render prompts for the values at Blueprint
+#   apply time and no credential is ever stored in this file or in Git.
 #
 # Every image is built from the repository ROOT as Docker build context
 # (dockerContext: .) because each Dockerfile copies workspace-level files
@@ -133,6 +137,14 @@ services:
         value: order-service
       - key: KAFKA_LOG_LEVEL
         value: info
+      - key: KAFKA_SSL
+        sync: false # true for a TLS broker; leave unset for a PLAINTEXT broker
+      - key: KAFKA_SASL_USERNAME
+        sync: false # managed broker SASL username
+      - key: KAFKA_SASL_PASSWORD
+        sync: false # managed broker SASL password
+      - key: KAFKA_SASL_MECHANISM
+        sync: false # plain | scram-sha-256 | scram-sha-512
       - key: RESTAURANT_SERVICE_URL
         # Public HTTPS base URL of orderly-restaurant (e.g.
         # https://orderly-restaurant.onrender.com), resolved by Render from the
@@ -160,6 +172,14 @@ services:
         value: payment-service
       - key: KAFKA_LOG_LEVEL
         value: info
+      - key: KAFKA_SSL
+        sync: false # true for a TLS broker; leave unset for a PLAINTEXT broker
+      - key: KAFKA_SASL_USERNAME
+        sync: false # managed broker SASL username
+      - key: KAFKA_SASL_PASSWORD
+        sync: false # managed broker SASL password
+      - key: KAFKA_SASL_MECHANISM
+        sync: false # plain | scram-sha-256 | scram-sha-512
       - key: ORDER_SERVICE_URL
         # Public HTTPS base URL of orderly-order (e.g.
         # https://orderly-order.onrender.com), resolved by Render from the
@@ -191,6 +211,14 @@ services:
         value: delivery-service
       - key: KAFKA_LOG_LEVEL
         value: info
+      - key: KAFKA_SSL
+        sync: false # true for a TLS broker; leave unset for a PLAINTEXT broker
+      - key: KAFKA_SASL_USERNAME
+        sync: false # managed broker SASL username
+      - key: KAFKA_SASL_PASSWORD
+        sync: false # managed broker SASL password
+      - key: KAFKA_SASL_MECHANISM
+        sync: false # plain | scram-sha-256 | scram-sha-512
 
   - type: web
     name: orderly-notification
@@ -210,3 +238,11 @@ services:
         value: notification-service
       - key: KAFKA_LOG_LEVEL
         value: info
+      - key: KAFKA_SSL
+        sync: false # true for a TLS broker; leave unset for a PLAINTEXT broker
+      - key: KAFKA_SASL_USERNAME
+        sync: false # managed broker SASL username
+      - key: KAFKA_SASL_PASSWORD
+        sync: false # managed broker SASL password
+      - key: KAFKA_SASL_MECHANISM
+        sync: false # plain | scram-sha-256 | scram-sha-512
