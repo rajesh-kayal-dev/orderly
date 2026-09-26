@@ -21,8 +21,9 @@ services:
   - type: web
     name: orderly-gateway
     runtime: docker
+    plan: free
     dockerContext: .
-    dockerPath: apps/gateway/Dockerfile
+    dockerfilePath: apps/gateway/Dockerfile
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -72,12 +73,13 @@ services:
       - key: DISPATCH_MAX_RADIUS_KM
         value: "15"
 
-  # ---------------- Internal services (private network) ----------------
+  # ---------------- Internal services ----------------
   - type: web
     name: orderly-identity
     runtime: docker
+    plan: free
     dockerContext: .
-    dockerPath: services/identity/Dockerfile
+    dockerfilePath: services/identity/Dockerfile
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -92,8 +94,9 @@ services:
   - type: web
     name: orderly-restaurant
     runtime: docker
+    plan: free
     dockerContext: .
-    dockerPath: services/restaurant/Dockerfile
+    dockerfilePath: services/restaurant/Dockerfile
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -104,8 +107,9 @@ services:
   - type: web
     name: orderly-order
     runtime: docker
+    plan: free
     dockerContext: .
-    dockerPath: services/order/Dockerfile
+    dockerfilePath: services/order/Dockerfile
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -124,8 +128,9 @@ services:
   - type: web
     name: orderly-payment
     runtime: docker
+    plan: free
     dockerContext: .
-    dockerPath: services/payment/Dockerfile
+    dockerfilePath: services/payment/Dockerfile
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -148,8 +153,9 @@ services:
   - type: web
     name: orderly-delivery
     runtime: docker
+    plan: free
     dockerContext: .
-    dockerPath: services/delivery/Dockerfile
+    dockerfilePath: services/delivery/Dockerfile
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -166,8 +172,9 @@ services:
   - type: web
     name: orderly-notification
     runtime: docker
+    plan: free
     dockerContext: .
-    dockerPath: services/notification/Dockerfile
+    dockerfilePath: services/notification/Dockerfile
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
